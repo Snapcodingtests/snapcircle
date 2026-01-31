@@ -1,4 +1,63 @@
 // ========================================
+// CONFIGURATION & CONSTANTS
+// ========================================
+const CONFIG = {
+    MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
+    MAX_CAPTION_LENGTH: 500,
+    MAX_USERNAME_LENGTH: 30,
+    MAX_BIO_LENGTH: 150,
+    POSTS_PER_PAGE: 10,
+    IMAGE_QUALITY: 0.8,
+    MAX_IMAGE_DIMENSION: 1920,
+    DEBOUNCE_DELAY: 300,
+    RATE_LIMIT: {
+        POST_INTERVAL: 10000, // 10 seconds between posts
+        REACTION_INTERVAL: 500 // 500ms between reactions
+    }
+};
+
+const STORAGE_KEYS = {
+    USERNAME: 'snapcircle_username',
+    USER_ID: 'snapcircle_user_id',
+    THEME: 'snapcircle_theme',
+    LAST_LOGIN: 'snapcircle_last_login',
+    STREAK: 'snapcircle_streak',
+    AVATAR_COLOR: 'snapcircle_avatar_color',
+    BIO: 'snapcircle_bio',
+    LAST_POST_TIME: 'snapcircle_last_post',
+    LAST_REACTION_TIME: 'snapcircle_last_reaction'
+};
+
+const BADGES = {
+    EARLY_BIRD: { emoji: '🌅', name: 'Early Bird', description: 'One of the first 100 users!', requirement: 'auto' },
+    FIRST_POST: { emoji: '✨', name: 'First Post', description: 'Created your first post', requirement: 1 },
+    ACTIVE_USER: { emoji: '🔥', name: 'Active User', description: 'Posted 10 times', requirement: 10 },
+    INFLUENCER: { emoji: '⭐', name: 'Influencer', description: 'Got 100 reactions', requirement: 100 },
+    WEEK_STREAK: { emoji: '🎯', name: 'Dedicated', description: '7 day login streak', requirement: 7 },
+    MONTH_STREAK: { emoji: '👑', name: 'Loyal', description: '30 day login streak', requirement: 30 },
+    SUPER_CREATOR: { emoji: '💎', name: 'Super Creator', description: 'Posted 50 times', requirement: 50 },
+    POPULAR: { emoji: '🌟', name: 'Popular', description: 'Got 500 reactions', requirement: 500 }
+};
+
+const REACTIONS = {
+    LIKE: { emoji: '👍', name: 'like' },
+    LOVE: { emoji: '❤️', name: 'love' },
+    HAHA: { emoji: '😂', name: 'haha' },
+    WOW: { emoji: '😮', name: 'wow' },
+    SAD: { emoji: '😢', name: 'sad' },
+    AWKWARD: { emoji: '😬', name: 'awkward' }
+};
+
+const AVATAR_COLORS = {
+    default: 'linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%)',
+    pink: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    blue: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    green: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    sunset: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+    ocean: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
+};
+
+// ========================================
 // FIREBASE CONFIGURATION
 // ========================================
 const firebaseConfig = {
@@ -11,93 +70,157 @@ const firebaseConfig = {
     appId: "1:12069426076:web:24496f14b46b2506606e59"
 };
 
-// Initialize Firebase
+// ========================================
+// GLOBAL STATE
+// ========================================
 let app, database;
 let isFirebaseInitialized = false;
-
-try {
-    app = firebase.initializeApp(firebaseConfig);
-    database = firebase.database();
-    isFirebaseInitialized = true;
-    console.log('Firebase initialized successfully');
-} catch (error) {
-    console.error('Firebase initialization error:', error);
-    alert('Firebase not configured. Please add your Firebase config to the JavaScript file.');
-}
-
-// ========================================
-// BADGES SYSTEM
-// ========================================
-const BADGES = {
-    EARLY_BIRD: { emoji: '🌅', name: 'Early Bird', description: 'One of the first users!', requirement: 'auto' },
-    FIRST_POST: { emoji: '✨', name: 'First Post', description: 'Created your first post', requirement: 1 },
-    ACTIVE_USER: { emoji: '🔥', name: 'Active User', description: 'Posted 10 times', requirement: 10 },
-    INFLUENCER: { emoji: '⭐', name: 'Influencer', description: 'Got 100 reactions', requirement: 100 },
-    WEEK_STREAK: { emoji: '🎯', name: 'Dedicated', description: '7 day login streak', requirement: 7 },
-    MONTH_STREAK: { emoji: '👑', name: 'Loyal', description: '30 day login streak', requirement: 30 },
-    SUPER_CREATOR: { emoji: '💎', name: 'Super Creator', description: 'Posted 50 times', requirement: 50 },
-    POPULAR: { emoji: '🌟', name: 'Popular', description: 'Got 500 reactions', requirement: 500 }
-};
-
-// ========================================
-// LOCAL STORAGE KEYS
-// ========================================
-const STORAGE_KEYS = {
-    USERNAME: 'snapcircle_username',
-    USER_ID: 'snapcircle_user_id',
-    THEME: 'snapcircle_theme',
-    LAST_LOGIN: 'snapcircle_last_login',
-    STREAK: 'snapcircle_streak',
-    AVATAR_COLOR: 'snapcircle_avatar_color',
-    BIO: 'snapcircle_bio'
-};
-
-// ========================================
-// USER MANAGEMENT
-// ========================================
 let currentUsername = localStorage.getItem(STORAGE_KEYS.USERNAME) || 'User' + Math.floor(Math.random() * 10000);
 let currentUserId = localStorage.getItem(STORAGE_KEYS.USER_ID) || generateUserId();
 let currentStreak = 0;
 let userBadges = [];
 let selectedAvatarColor = localStorage.getItem(STORAGE_KEYS.AVATAR_COLOR) || 'default';
-
-// Avatar color gradients
-const AVATAR_COLORS = {
-    default: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    pink: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-    blue: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-    green: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-    sunset: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-    ocean: 'linear-gradient(135deg, #30cfd0 0%, #330867 100%)'
-};
-
-// Save initial user data
-localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
-localStorage.setItem(STORAGE_KEYS.USER_ID, currentUserId);
-
-// Reaction types
-const REACTIONS = {
-    LIKE: { emoji: '👍', name: 'like' },
-    LOVE: { emoji: '❤️', name: 'love' },
-    HAHA: { emoji: '😂', name: 'haha' },
-    WOW: { emoji: '😮', name: 'wow' },
-    SAD: { emoji: '😢', name: 'sad' },
-    AWKWARD: { emoji: '😬', name: 'awkward' }
-};
+let currentFile = null;
+let postsListener = null;
+let lastPostId = null;
+let isLoadingPosts = false;
 
 // ========================================
-// INITIALIZATION
+// UTILITY FUNCTIONS
 // ========================================
-document.addEventListener('DOMContentLoaded', function() {
-    // Show loading screen, then hide after content loads
+
+/**
+ * Sanitize user input to prevent XSS attacks
+ */
+function sanitizeInput(input) {
+    const div = document.createElement('div');
+    div.textContent = input;
+    return div.innerHTML;
+}
+
+/**
+ * Validate username
+ */
+function validateUsername(username) {
+    if (!username || username.trim().length === 0) {
+        return { valid: false, error: 'Username cannot be empty' };
+    }
+    if (username.length > CONFIG.MAX_USERNAME_LENGTH) {
+        return { valid: false, error: `Username must be under ${CONFIG.MAX_USERNAME_LENGTH} characters` };
+    }
+    if (!/^[a-zA-Z0-9_\s]+$/.test(username)) {
+        return { valid: false, error: 'Username can only contain letters, numbers, spaces, and underscores' };
+    }
+    return { valid: true };
+}
+
+/**
+ * Debounce function to limit rate of function calls
+ */
+function debounce(func, delay) {
+    let timeoutId;
+    return function (...args) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
+/**
+ * Format timestamp to relative time
+ */
+function formatTimeAgo(timestamp) {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 7) {
+        return new Date(timestamp).toLocaleDateString();
+    } else if (days > 0) {
+        return `${days}d ago`;
+    } else if (hours > 0) {
+        return `${hours}h ago`;
+    } else if (minutes > 0) {
+        return `${minutes}m ago`;
+    } else {
+        return 'Just now';
+    }
+}
+
+/**
+ * Generate unique user ID
+ */
+function generateUserId() {
+    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+/**
+ * Show notification toast
+ */
+function showNotification(message, type = 'success') {
+    const notification = document.getElementById('notification');
+    const notificationText = document.getElementById('notificationText');
+    const icon = notification.querySelector('.notification-icon');
+    
+    notificationText.textContent = message;
+    icon.textContent = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+    
+    notification.classList.add('show');
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+    }, 3000);
+}
+
+/**
+ * Handle errors gracefully
+ */
+function handleError(error, context = '') {
+    console.error(`Error in ${context}:`, error);
+    showNotification(`Something went wrong. Please try again.`, 'error');
+}
+
+// ========================================
+// FIREBASE INITIALIZATION
+// ========================================
+async function initializeFirebase() {
+    try {
+        app = firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        isFirebaseInitialized = true;
+        console.log('Firebase initialized successfully');
+        return true;
+    } catch (error) {
+        console.error('Firebase initialization error:', error);
+        showNotification('Failed to connect to server. Some features may not work.', 'error');
+        return false;
+    }
+}
+
+// ========================================
+// APP INITIALIZATION
+// ========================================
+document.addEventListener('DOMContentLoaded', async function() {
+    // Initialize Firebase
+    await initializeFirebase();
+    
+    // Hide loading screen
     setTimeout(() => {
         document.getElementById('loadingScreen').classList.add('hidden');
     }, 1500);
 
-    initializeApp();
+    // Initialize app
+    await initializeApp();
 });
 
 async function initializeApp() {
+    // Save initial user data
+    localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
+    localStorage.setItem(STORAGE_KEYS.USER_ID, currentUserId);
+    
+    // Initialize UI
     updateUsernameDisplay();
     loadTheme();
     updateStreak();
@@ -105,36 +228,17 @@ async function initializeApp() {
     setupScrollButton();
     setupKonamiCode();
     setupTrendingTopics();
+    setupCharCounter();
     
+    // Load data if Firebase is initialized
     if (isFirebaseInitialized) {
         await loadUserData();
-        await loadPosts();
+        await loadPostsWithPagination();
         updateBadgeDisplay();
         updateStatsDisplay();
         loadSuggestedUsers();
+        setupRealtimeListeners();
     }
-}
-
-function generateUserId() {
-    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-function updateUsernameDisplay() {
-    document.getElementById('currentUsername').textContent = currentUsername;
-    const initial = currentUsername.charAt(0).toUpperCase();
-    
-    // Update all avatar displays
-    const avatarElements = document.querySelectorAll('#headerAvatar span:first-child');
-    avatarElements.forEach(el => el.textContent = initial);
-    
-    // Apply custom avatar color
-    applyAvatarColor();
-}
-
-function applyAvatarColor() {
-    const gradient = AVATAR_COLORS[selectedAvatarColor] || AVATAR_COLORS.default;
-    document.documentElement.style.setProperty('--gradient-start', gradient.match(/#[0-9a-f]+/gi)[0]);
-    document.documentElement.style.setProperty('--gradient-end', gradient.match(/#[0-9a-f]+/gi)[1]);
 }
 
 // ========================================
@@ -156,6 +260,94 @@ function toggleTheme() {
 }
 
 // ========================================
+// USER MANAGEMENT
+// ========================================
+function updateUsernameDisplay() {
+    document.getElementById('currentUsername').textContent = currentUsername;
+    const initial = currentUsername.charAt(0).toUpperCase();
+    
+    const avatarElements = document.querySelectorAll('#headerAvatar span:first-child');
+    avatarElements.forEach(el => el.textContent = initial);
+    
+    applyAvatarColor();
+}
+
+function applyAvatarColor() {
+    const gradient = AVATAR_COLORS[selectedAvatarColor] || AVATAR_COLORS.default;
+    const colors = gradient.match(/#[0-9a-f]+/gi);
+    if (colors && colors.length >= 2) {
+        document.documentElement.style.setProperty('--gradient-start', colors[0]);
+        document.documentElement.style.setProperty('--gradient-end', colors[1]);
+    }
+}
+
+function openUsernameModal() {
+    const modal = document.getElementById('usernameModal');
+    document.getElementById('usernameInput').value = currentUsername;
+    document.getElementById('bioInput').value = localStorage.getItem(STORAGE_KEYS.BIO) || '';
+    modal.classList.add('show');
+}
+
+function closeUsernameModal() {
+    document.getElementById('usernameModal').classList.remove('show');
+}
+
+async function saveUsername() {
+    const newUsername = document.getElementById('usernameInput').value.trim();
+    const newBio = document.getElementById('bioInput').value.trim();
+    
+    // Validate username
+    const validation = validateUsername(newUsername);
+    if (!validation.valid) {
+        showNotification(validation.error, 'error');
+        return;
+    }
+    
+    // Validate bio length
+    if (newBio.length > CONFIG.MAX_BIO_LENGTH) {
+        showNotification(`Bio must be under ${CONFIG.MAX_BIO_LENGTH} characters`, 'error');
+        return;
+    }
+    
+    // Sanitize inputs
+    currentUsername = sanitizeInput(newUsername);
+    const sanitizedBio = sanitizeInput(newBio);
+    
+    // Update local storage
+    localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
+    localStorage.setItem(STORAGE_KEYS.BIO, sanitizedBio);
+    localStorage.setItem(STORAGE_KEYS.AVATAR_COLOR, selectedAvatarColor);
+    
+    // Update Firebase
+    if (isFirebaseInitialized) {
+        try {
+            await database.ref('users/' + currentUserId).update({
+                username: currentUsername,
+                bio: sanitizedBio,
+                avatarColor: selectedAvatarColor,
+                updatedAt: Date.now()
+            });
+        } catch (error) {
+            handleError(error, 'saveUsername');
+        }
+    }
+    
+    updateUsernameDisplay();
+    closeUsernameModal();
+    showNotification('Profile updated successfully!');
+}
+
+function selectColor(element, colorKey) {
+    document.querySelectorAll('.color-option').forEach(el => {
+        el.classList.remove('selected');
+        el.setAttribute('aria-checked', 'false');
+    });
+    element.classList.add('selected');
+    element.setAttribute('aria-checked', 'true');
+    selectedAvatarColor = colorKey;
+}
+
+// ========================================
 // STREAK SYSTEM
 // ========================================
 function updateStreak() {
@@ -164,22 +356,18 @@ function updateStreak() {
     const savedStreak = parseInt(localStorage.getItem(STORAGE_KEYS.STREAK) || '0');
     
     if (!lastLogin) {
-        // First time user
         currentStreak = 1;
     } else if (lastLogin === today) {
-        // Already logged in today
         currentStreak = savedStreak;
     } else {
         const lastDate = new Date(lastLogin);
-        const todayDate = new Date();
+        const todayDate = new Date(today);
         const diffTime = Math.abs(todayDate - lastDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays === 1) {
-            // Consecutive day
             currentStreak = savedStreak + 1;
         } else {
-            // Streak broken
             currentStreak = 1;
         }
     }
@@ -194,10 +382,11 @@ function updateStreak() {
     
     // Save to Firebase
     if (isFirebaseInitialized) {
-        database.ref('users/' + currentUserId + '/streak').set(currentStreak);
+        database.ref('users/' + currentUserId + '/streak').set(currentStreak).catch(error => {
+            console.error('Error updating streak:', error);
+        });
     }
     
-    // Check for streak badges
     checkBadges();
 }
 
@@ -205,195 +394,143 @@ function updateStreak() {
 // BADGES SYSTEM
 // ========================================
 async function loadUserData() {
+    if (!isFirebaseInitialized) return;
+    
     try {
         const snapshot = await database.ref('users/' + currentUserId).once('value');
         const userData = snapshot.val() || {};
         
         userBadges = userData.badges || [];
         
-        // Auto-award early bird badge if one of first 100 users
+        // Auto-award early bird badge
         const usersSnapshot = await database.ref('users').once('value');
         const totalUsers = usersSnapshot.numChildren();
+        
         if (totalUsers <= 100 && !userBadges.includes('EARLY_BIRD')) {
             userBadges.push('EARLY_BIRD');
             await database.ref('users/' + currentUserId + '/badges').set(userBadges);
+            showNotification('🌅 You earned the Early Bird badge!');
         }
         
         updateBadgeDisplay();
     } catch (error) {
-        console.error('Error loading user data:', error);
+        handleError(error, 'loadUserData');
     }
 }
 
-function checkBadges() {
-    // Check streak badges
-    if (currentStreak >= 7 && !userBadges.includes('WEEK_STREAK')) {
-        awardBadge('WEEK_STREAK');
+async function checkBadges() {
+    if (!isFirebaseInitialized) return;
+    
+    try {
+        // Get user's posts
+        const postsSnapshot = await database.ref('posts')
+            .orderByChild('userId')
+            .equalTo(currentUserId)
+            .once('value');
+        
+        const posts = [];
+        let totalReactions = 0;
+        
+        postsSnapshot.forEach(snap => {
+            const post = snap.val();
+            posts.push(post);
+            if (post.reactions) {
+                totalReactions += Object.keys(post.reactions).length;
+            }
+        });
+        
+        const postCount = posts.length;
+        const newBadges = [...userBadges];
+        
+        // Check post-based badges
+        if (postCount >= 1 && !newBadges.includes('FIRST_POST')) {
+            newBadges.push('FIRST_POST');
+            showNotification('✨ You earned the First Post badge!');
+        }
+        if (postCount >= 10 && !newBadges.includes('ACTIVE_USER')) {
+            newBadges.push('ACTIVE_USER');
+            showNotification('🔥 You earned the Active User badge!');
+        }
+        if (postCount >= 50 && !newBadges.includes('SUPER_CREATOR')) {
+            newBadges.push('SUPER_CREATOR');
+            showNotification('💎 You earned the Super Creator badge!');
+        }
+        
+        // Check reaction-based badges
+        if (totalReactions >= 100 && !newBadges.includes('INFLUENCER')) {
+            newBadges.push('INFLUENCER');
+            showNotification('⭐ You earned the Influencer badge!');
+        }
+        if (totalReactions >= 500 && !newBadges.includes('POPULAR')) {
+            newBadges.push('POPULAR');
+            showNotification('🌟 You earned the Popular badge!');
+        }
+        
+        // Check streak badges
+        if (currentStreak >= 7 && !newBadges.includes('WEEK_STREAK')) {
+            newBadges.push('WEEK_STREAK');
+            showNotification('🎯 You earned the Dedicated badge!');
+        }
+        if (currentStreak >= 30 && !newBadges.includes('MONTH_STREAK')) {
+            newBadges.push('MONTH_STREAK');
+            showNotification('👑 You earned the Loyal badge!');
+        }
+        
+        // Update if badges changed
+        if (newBadges.length > userBadges.length) {
+            userBadges = newBadges;
+            await database.ref('users/' + currentUserId + '/badges').set(userBadges);
+            updateBadgeDisplay();
+            updateStatsDisplay();
+        }
+    } catch (error) {
+        handleError(error, 'checkBadges');
     }
-    if (currentStreak >= 30 && !userBadges.includes('MONTH_STREAK')) {
-        awardBadge('MONTH_STREAK');
-    }
-}
-
-async function awardBadge(badgeKey) {
-    if (userBadges.includes(badgeKey)) return;
-    
-    userBadges.push(badgeKey);
-    
-    // Save to Firebase
-    if (isFirebaseInitialized) {
-        await database.ref('users/' + currentUserId + '/badges').set(userBadges);
-    }
-    
-    // Show notification
-    const badge = BADGES[badgeKey];
-    showNotification(`🎉 New Badge! ${badge.emoji} ${badge.name}`);
-    
-    updateBadgeDisplay();
 }
 
 function updateBadgeDisplay() {
-    // Update sidebar badge showcase
-    const badgeShowcase = document.getElementById('badgeShowcase');
-    badgeShowcase.innerHTML = '';
+    const showcase = document.getElementById('badgeShowcase');
+    const headerBadge = document.getElementById('headerBadge');
     
-    Object.keys(BADGES).forEach(key => {
-        const badge = BADGES[key];
-        const hasBadge = userBadges.includes(key);
-        
-        const badgeItem = document.createElement('div');
-        badgeItem.className = 'badge-item' + (hasBadge ? '' : ' locked');
-        badgeItem.title = badge.description;
-        badgeItem.innerHTML = `
-            <div class="badge-icon">${badge.emoji}</div>
-            <div class="badge-name">${badge.name}</div>
-        `;
-        badgeShowcase.appendChild(badgeItem);
+    showcase.innerHTML = '';
+    
+    Object.entries(BADGES).forEach(([key, badge]) => {
+        const earned = userBadges.includes(key);
+        const div = document.createElement('div');
+        div.className = 'badge-item' + (earned ? '' : ' locked');
+        div.innerHTML = badge.emoji;
+        div.title = badge.name + ': ' + badge.description;
+        div.setAttribute('role', 'listitem');
+        showcase.appendChild(div);
     });
     
-    // Update header badge (show highest badge)
-    const headerBadge = document.getElementById('headerBadge');
+    // Show most recent badge in header
     if (userBadges.length > 0) {
-        const highestBadge = BADGES[userBadges[userBadges.length - 1]];
-        headerBadge.textContent = highestBadge.emoji;
+        const latestBadge = BADGES[userBadges[userBadges.length - 1]];
+        headerBadge.textContent = latestBadge.emoji;
+        headerBadge.title = latestBadge.name;
     }
     
-    // Update stats
     document.getElementById('userBadgesCount').textContent = userBadges.length;
 }
 
 // ========================================
-// PROFILE CUSTOMIZATION
+// FILE UPLOAD & IMAGE COMPRESSION
 // ========================================
-function selectColor(element, colorKey) {
-    // Remove selected class from all
-    document.querySelectorAll('.color-option').forEach(el => el.classList.remove('selected'));
-    // Add to clicked
-    element.classList.add('selected');
-    selectedAvatarColor = colorKey;
-}
-
-async function saveUsername() {
-    const newUsername = document.getElementById('usernameInput').value.trim();
-    const newBio = document.getElementById('bioInput').value.trim();
-    
-    if (!newUsername) {
-        alert('Please enter a username');
-        return;
-    }
-    
-    if (newUsername.length < 3) {
-        alert('Username must be at least 3 characters');
-        return;
-    }
-    
-    currentUsername = newUsername;
-    localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
-    localStorage.setItem(STORAGE_KEYS.AVATAR_COLOR, selectedAvatarColor);
-    localStorage.setItem(STORAGE_KEYS.BIO, newBio);
-    
-    // Save to Firebase
-    if (isFirebaseInitialized) {
-        await database.ref('users/' + currentUserId).update({
-            username: currentUsername,
-            avatarColor: selectedAvatarColor,
-            bio: newBio
-        });
-    }
-    
-    updateUsernameDisplay();
-    closeUsernameModal();
-    showNotification('Profile updated!');
-}
-
-function openUsernameModal() {
-    document.getElementById('usernameInput').value = currentUsername;
-    document.getElementById('bioInput').value = localStorage.getItem(STORAGE_KEYS.BIO) || '';
-    document.getElementById('usernameModal').classList.add('show');
-}
-
-function closeUsernameModal() {
-    document.getElementById('usernameModal').classList.remove('show');
-}
-
-// ========================================
-// STATS DISPLAY
-// ========================================
-async function updateStatsDisplay() {
-    try {
-        // Count user's posts
-        const postsSnapshot = await database.ref('posts').orderByChild('userId').equalTo(currentUserId).once('value');
-        const postCount = postsSnapshot.numChildren();
-        document.getElementById('userPostCount').textContent = postCount;
-        
-        // Count total reactions received
-        let totalReactions = 0;
-        postsSnapshot.forEach(post => {
-            const reactions = post.val().reactions || {};
-            totalReactions += Object.keys(reactions).length;
-        });
-        document.getElementById('userLikesCount').textContent = totalReactions;
-        
-        // Check for badges based on stats
-        if (postCount >= 1 && !userBadges.includes('FIRST_POST')) {
-            awardBadge('FIRST_POST');
-        }
-        if (postCount >= 10 && !userBadges.includes('ACTIVE_USER')) {
-            awardBadge('ACTIVE_USER');
-        }
-        if (postCount >= 50 && !userBadges.includes('SUPER_CREATOR')) {
-            awardBadge('SUPER_CREATOR');
-        }
-        if (totalReactions >= 100 && !userBadges.includes('INFLUENCER')) {
-            awardBadge('INFLUENCER');
-        }
-        if (totalReactions >= 500 && !userBadges.includes('POPULAR')) {
-            awardBadge('POPULAR');
-        }
-        
-    } catch (error) {
-        console.error('Error updating stats:', error);
-    }
-}
-
-// ========================================
-// FILE UPLOAD HANDLING
-// ========================================
-let selectedFile = null;
-
 function setupFileUpload() {
     const uploadArea = document.getElementById('uploadArea');
     const fileInput = document.getElementById('fileInput');
-
+    
+    // Drag and drop
     uploadArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadArea.classList.add('drag-over');
     });
-
+    
     uploadArea.addEventListener('dragleave', () => {
         uploadArea.classList.remove('drag-over');
     });
-
+    
     uploadArea.addEventListener('drop', (e) => {
         e.preventDefault();
         uploadArea.classList.remove('drag-over');
@@ -402,7 +539,7 @@ function setupFileUpload() {
             handleFileSelect(files[0]);
         }
     });
-
+    
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
             handleFileSelect(e.target.files[0]);
@@ -410,50 +547,133 @@ function setupFileUpload() {
     });
 }
 
-function handleFileSelect(file) {
+async function handleFileSelect(file) {
+    // Validate file size
+    if (file.size > CONFIG.MAX_FILE_SIZE) {
+        showNotification(`File size must be under ${CONFIG.MAX_FILE_SIZE / 1024 / 1024}MB`, 'error');
+        return;
+    }
+    
+    // Validate file type
     if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-        alert('Please select an image or video file');
+        showNotification('Only images and videos are supported', 'error');
         return;
     }
-
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    if (file.size > maxSize) {
-        alert('File is too large. Maximum size is 50MB');
-        return;
+    
+    // Compress image if needed
+    if (file.type.startsWith('image/')) {
+        try {
+            currentFile = await compressImage(file);
+        } catch (error) {
+            handleError(error, 'Image compression');
+            return;
+        }
+    } else {
+        currentFile = file;
     }
-
-    selectedFile = file;
-    displayPreview(file);
+    
+    // Show preview
+    showPreview(currentFile);
 }
 
-function displayPreview(file) {
-    const previewContainer = document.getElementById('previewContainer');
-    previewContainer.innerHTML = '<button class="remove-preview" onclick="removePreview()">×</button>';
-    previewContainer.style.display = 'block';
-
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        if (file.type.startsWith('image/')) {
-            const img = document.createElement('img');
+async function compressImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // Resize if too large
+                if (width > CONFIG.MAX_IMAGE_DIMENSION || height > CONFIG.MAX_IMAGE_DIMENSION) {
+                    if (width > height) {
+                        height = (height / width) * CONFIG.MAX_IMAGE_DIMENSION;
+                        width = CONFIG.MAX_IMAGE_DIMENSION;
+                    } else {
+                        width = (width / height) * CONFIG.MAX_IMAGE_DIMENSION;
+                        height = CONFIG.MAX_IMAGE_DIMENSION;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                canvas.toBlob((blob) => {
+                    resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+                }, 'image/jpeg', CONFIG.IMAGE_QUALITY);
+            };
+            img.onerror = reject;
             img.src = e.target.result;
-            previewContainer.appendChild(img);
-        } else if (file.type.startsWith('video/')) {
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function showPreview(file) {
+    const container = document.getElementById('previewContainer');
+    container.innerHTML = '<button class="remove-preview" onclick="removePreview()" aria-label="Remove preview">×</button>';
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        if (file.type.startsWith('video/')) {
             const video = document.createElement('video');
             video.src = e.target.result;
             video.controls = true;
-            video.style.maxWidth = '100%';
-            previewContainer.appendChild(video);
+            video.muted = true;
+            container.appendChild(video);
+        } else {
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.alt = 'Preview';
+            container.appendChild(img);
         }
+        container.classList.add('show');
     };
     reader.readAsDataURL(file);
 }
 
 function removePreview() {
-    event.stopPropagation();
-    selectedFile = null;
+    const container = document.getElementById('previewContainer');
+    container.classList.remove('show');
+    container.innerHTML = '<button class="remove-preview" onclick="removePreview()">×</button>';
+    currentFile = null;
     document.getElementById('fileInput').value = '';
-    document.getElementById('previewContainer').style.display = 'none';
-    document.getElementById('previewContainer').innerHTML = '';
+}
+
+function setupCharCounter() {
+    const captionInput = document.getElementById('captionInput');
+    const charCounter = document.getElementById('charCounter');
+    
+    captionInput.addEventListener('input', () => {
+        const length = captionInput.value.length;
+        charCounter.textContent = `${length} / ${CONFIG.MAX_CAPTION_LENGTH}`;
+        
+        if (length > CONFIG.MAX_CAPTION_LENGTH * 0.9) {
+            charCounter.classList.add('warning');
+        } else {
+            charCounter.classList.remove('warning');
+        }
+    });
+}
+
+function updateCharCounter() {
+    const captionInput = document.getElementById('captionInput');
+    const charCounter = document.getElementById('charCounter');
+    const length = captionInput.value.length;
+    
+    charCounter.textContent = `${length} / ${CONFIG.MAX_CAPTION_LENGTH}`;
+    
+    if (length > CONFIG.MAX_CAPTION_LENGTH * 0.9) {
+        charCounter.classList.add('warning');
+    } else {
+        charCounter.classList.remove('warning');
+    }
 }
 
 // ========================================
@@ -461,438 +681,517 @@ function removePreview() {
 // ========================================
 async function createPost() {
     if (!isFirebaseInitialized) {
-        alert('Firebase is not configured. Please check the console for details.');
+        showNotification('Cannot create post: Not connected to server', 'error');
         return;
     }
-
-    if (!selectedFile) {
-        alert('Please select a file first');
-        return;
-    }
-
-    const caption = document.getElementById('captionInput').value.trim();
-    const postBtn = document.getElementById('postBtn');
     
+    const caption = document.getElementById('captionInput').value.trim();
+    
+    // Validate caption length
+    if (caption.length > CONFIG.MAX_CAPTION_LENGTH) {
+        showNotification(`Caption must be under ${CONFIG.MAX_CAPTION_LENGTH} characters`, 'error');
+        return;
+    }
+    
+    // Require either media or caption
+    if (!currentFile && !caption) {
+        showNotification('Please add an image/video or write a caption', 'error');
+        return;
+    }
+    
+    // Rate limiting
+    const lastPostTime = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_POST_TIME) || '0');
+    const now = Date.now();
+    if (now - lastPostTime < CONFIG.RATE_LIMIT.POST_INTERVAL) {
+        const waitTime = Math.ceil((CONFIG.RATE_LIMIT.POST_INTERVAL - (now - lastPostTime)) / 1000);
+        showNotification(`Please wait ${waitTime} seconds before posting again`, 'error');
+        return;
+    }
+    
+    const postBtn = document.getElementById('postBtn');
     postBtn.disabled = true;
-    postBtn.textContent = 'Processing...';
-
+    postBtn.textContent = 'Posting...';
+    
     try {
-        const isVideo = selectedFile.type.startsWith('video/');
-        let mediaData;
-
-        if (isVideo) {
-            if (selectedFile.size > 5 * 1024 * 1024) {
-                alert('Video is too large. Maximum size is 5MB.');
-                postBtn.textContent = 'Share Post';
-                postBtn.disabled = false;
-                return;
-            }
-            
-            postBtn.textContent = 'Converting video...';
-            mediaData = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.readAsDataURL(selectedFile);
-            });
-        } else {
-            if (selectedFile.size > 2 * 1024 * 1024) {
-                alert('Image is too large. Maximum size is 2MB.');
-                postBtn.textContent = 'Share Post';
-                postBtn.disabled = false;
-                return;
-            }
-            
-            postBtn.textContent = 'Converting image...';
-            mediaData = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
-                reader.onerror = (e) => reject(e);
-                reader.readAsDataURL(selectedFile);
-            });
-        }
-
-        postBtn.textContent = 'Saving...';
-        const timestamp = Date.now();
+        let mediaUrl = null;
+        let mediaType = null;
         
-        const post = {
-            id: 'post_' + timestamp,
+        if (currentFile) {
+            // Convert file to base64
+            mediaUrl = await fileToBase64(currentFile);
+            mediaType = currentFile.type.startsWith('video/') ? 'video' : 'image';
+        }
+        
+        const postData = {
             userId: currentUserId,
             username: currentUsername,
             avatarColor: selectedAvatarColor,
-            caption: caption,
-            mediaUrl: mediaData,
-            mediaType: isVideo ? 'video' : 'image',
-            timestamp: timestamp,
+            caption: sanitizeInput(caption),
+            mediaUrl: mediaUrl,
+            mediaType: mediaType,
+            timestamp: Date.now(),
             reactions: {}
         };
-
-        await database.ref('posts/' + post.id).set(post);
-
-        // Reset form
-        selectedFile = null;
-        document.getElementById('fileInput').value = '';
+        
+        await database.ref('posts').push(postData);
+        
+        // Update last post time
+        localStorage.setItem(STORAGE_KEYS.LAST_POST_TIME, now.toString());
+        
+        // Clear form
         document.getElementById('captionInput').value = '';
-        document.getElementById('previewContainer').style.display = 'none';
-        document.getElementById('previewContainer').innerHTML = '';
+        removePreview();
+        updateCharCounter();
         
-        postBtn.textContent = 'Share Post';
-        postBtn.disabled = false;
-
-        showNotification('Post created successfully! ✨');
+        showNotification('Post created successfully!');
         
-        // Update stats
-        updateStatsDisplay();
-
+        // Check for badges
+        await checkBadges();
+        await updateStatsDisplay();
+        
     } catch (error) {
-        console.error('Error creating post:', error);
-        alert('Failed to create post. Please try again.');
-        postBtn.textContent = 'Share Post';
+        handleError(error, 'createPost');
+    } finally {
         postBtn.disabled = false;
+        postBtn.textContent = 'Share Post';
     }
 }
 
-// ========================================
-// LOAD & DISPLAY POSTS
-// ========================================
-async function loadPosts() {
-    const feed = document.getElementById('feed');
-    
-    database.ref('posts').orderByChild('timestamp').on('value', (snapshot) => {
-        feed.innerHTML = '';
-        const posts = [];
-        
-        snapshot.forEach((childSnapshot) => {
-            posts.push(childSnapshot.val());
-        });
-        
-        // Sort by newest first
-        posts.sort((a, b) => b.timestamp - a.timestamp);
-        
-        if (posts.length === 0) {
-            feed.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">🔵</div>
-                    <h3>Welcome to SnapCircle!</h3>
-                    <p>Be the first to share something amazing!</p>
-                </div>
-            `;
-            return;
-        }
-        
-        posts.forEach((post, index) => {
-            setTimeout(() => {
-                const postElement = createPostElement(post);
-                feed.appendChild(postElement);
-            }, index * 100); // Stagger animation
-        });
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
     });
 }
 
+// ========================================
+// POST DISPLAY & PAGINATION
+// ========================================
+async function loadPostsWithPagination() {
+    if (!isFirebaseInitialized || isLoadingPosts) return;
+    
+    isLoadingPosts = true;
+    const feed = document.getElementById('feed');
+    
+    // Show skeleton loaders
+    showSkeletonLoaders(3);
+    
+    try {
+        let query = database.ref('posts')
+            .orderByChild('timestamp')
+            .limitToLast(CONFIG.POSTS_PER_PAGE);
+        
+        if (lastPostId) {
+            // Load more posts
+            query = query.endAt(lastPostId);
+        }
+        
+        const snapshot = await query.once('value');
+        const posts = [];
+        
+        snapshot.forEach(snap => {
+            posts.push({ id: snap.key, ...snap.val() });
+        });
+        
+        // Remove skeleton loaders
+        feed.querySelectorAll('.skeleton-post').forEach(el => el.remove());
+        
+        if (posts.length === 0) {
+            if (!lastPostId) {
+                // No posts at all
+                feed.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔵</div>
+                        <h3>Welcome to SnapCircle!</h3>
+                        <p>Be the first to share something amazing!</p>
+                    </div>
+                `;
+            }
+        } else {
+            // Remove empty state if it exists
+            const emptyState = feed.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            
+            // Sort posts by timestamp (newest first)
+            posts.sort((a, b) => b.timestamp - a.timestamp);
+            
+            posts.forEach(post => {
+                if (post.id !== lastPostId) {
+                    const postElement = createPostElement(post);
+                    feed.appendChild(postElement);
+                }
+            });
+            
+            // Update last post ID for pagination
+            if (posts.length > 0) {
+                lastPostId = posts[0].id;
+            }
+        }
+    } catch (error) {
+        handleError(error, 'loadPostsWithPagination');
+        feed.innerHTML = `
+            <div class="error-message">
+                <span class="error-icon">⚠️</span>
+                <div>
+                    <strong>Failed to load posts</strong>
+                    <p>Please check your connection and try again.</p>
+                </div>
+            </div>
+        `;
+    } finally {
+        isLoadingPosts = false;
+    }
+}
+
+function showSkeletonLoaders(count) {
+    const feed = document.getElementById('feed');
+    const emptyState = feed.querySelector('.empty-state');
+    if (emptyState) emptyState.remove();
+    
+    for (let i = 0; i < count; i++) {
+        const skeleton = document.createElement('div');
+        skeleton.className = 'skeleton-post';
+        skeleton.innerHTML = `
+            <div class="skeleton-header">
+                <div class="skeleton-avatar"></div>
+                <div class="skeleton-text">
+                    <div class="skeleton-line short"></div>
+                    <div class="skeleton-line" style="width: 40%;"></div>
+                </div>
+            </div>
+            <div class="skeleton-media"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line short"></div>
+        `;
+        feed.appendChild(skeleton);
+    }
+}
+
+function setupRealtimeListeners() {
+    if (!isFirebaseInitialized) return;
+    
+    // Listen for new posts
+    postsListener = database.ref('posts')
+        .orderByChild('timestamp')
+        .startAt(Date.now())
+        .on('child_added', (snapshot) => {
+            const post = { id: snapshot.key, ...snapshot.val() };
+            
+            // Don't add if it's our own post (already added) or if it's an old post
+            if (post.userId === currentUserId || post.timestamp < Date.now() - 10000) {
+                return;
+            }
+            
+            const feed = document.getElementById('feed');
+            const emptyState = feed.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+            
+            const postElement = createPostElement(post);
+            feed.insertBefore(postElement, feed.firstChild);
+        });
+}
+
 function createPostElement(post) {
-    const postDiv = document.createElement('div');
-    postDiv.className = 'post';
-    postDiv.setAttribute('data-post-id', post.id);
-    postDiv.setAttribute('data-username', post.username);
-    postDiv.setAttribute('data-caption', post.caption);
+    const article = document.createElement('article');
+    article.className = 'post-card';
+    article.setAttribute('data-post-id', post.id);
+    article.setAttribute('role', 'article');
     
-    const timeAgo = getTimeAgo(post.timestamp);
-    const userReaction = post.reactions && post.reactions[currentUserId];
-    const reactionCount = post.reactions ? Object.keys(post.reactions).length : 0;
-    
-    // Get avatar gradient
     const avatarGradient = AVATAR_COLORS[post.avatarColor] || AVATAR_COLORS.default;
-    
-    const mediaElement = post.mediaType === 'video' 
-        ? `<video class="post-media" src="${post.mediaUrl}" controls ondblclick="doubleClickLike('${post.id}')"></video>`
-        : `<img class="post-media" src="${post.mediaUrl}" alt="Post" ondblclick="doubleClickLike('${post.id}')">`;
-    
+    const initial = (post.username || 'U').charAt(0).toUpperCase();
+    const userBadge = post.userId ? getUserTopBadge(post.userId) : '';
     const isOwnPost = post.userId === currentUserId;
     
-    postDiv.innerHTML = `
+    let mediaHTML = '';
+    if (post.mediaUrl) {
+        if (post.mediaType === 'video') {
+            mediaHTML = `
+                <div class="post-media">
+                    <video src="${post.mediaUrl}" controls></video>
+                </div>
+            `;
+        } else {
+            mediaHTML = `
+                <div class="post-media">
+                    <img src="${post.mediaUrl}" alt="Post image" onclick="openImageViewer('${post.mediaUrl}')">
+                </div>
+            `;
+        }
+    }
+    
+    let reactionsHTML = '';
+    Object.entries(REACTIONS).forEach(([key, reaction]) => {
+        const count = post.reactions && post.reactions[reaction.name] ? 
+            Object.keys(post.reactions[reaction.name]).length : 0;
+        const isActive = post.reactions && post.reactions[reaction.name] && 
+            post.reactions[reaction.name][currentUserId];
+        
+        reactionsHTML += `
+            <button 
+                class="reaction-btn ${isActive ? 'active' : ''}" 
+                onclick="toggleReaction('${post.id}', '${reaction.name}')"
+                aria-label="${reaction.name} reaction"
+            >
+                <span aria-hidden="true">${reaction.emoji}</span>
+                ${count > 0 ? `<span class="reaction-count">${count}</span>` : ''}
+            </button>
+        `;
+    });
+    
+    article.innerHTML = `
         <div class="post-header">
-            <div class="post-user" onclick="viewProfile('${post.userId}')">
-                <div class="post-avatar" style="background: ${avatarGradient}">
-                    ${post.username.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                    <div class="post-username">${post.username}</div>
-                    <div class="post-time">${timeAgo}</div>
-                </div>
+            <div class="post-avatar" style="background: ${avatarGradient}" onclick="viewProfile('${post.userId}')" role="button" tabindex="0">
+                ${initial}
+                ${userBadge ? `<span class="post-badge" title="${userBadge}">${userBadge}</span>` : ''}
             </div>
-            <div class="share-menu">
-                <div class="post-options" onclick="toggleShareMenu(event, '${post.id}')">⋯</div>
-                <div class="share-dropdown" id="share-${post.id}">
-                    <div class="share-option" onclick="copyLink('${post.id}')">
-                        🔗 Copy Link
-                    </div>
-                    <div class="share-option" onclick="reportPost('${post.id}', '${post.username}')">
-                        🚩 Report
-                    </div>
-                    ${isOwnPost ? `<div class="share-option delete-option" onclick="deletePost('${post.id}')">🗑️ Delete</div>` : ''}
+            <div class="post-info">
+                <div class="post-username" onclick="viewProfile('${post.userId}')" role="button" tabindex="0">
+                    ${sanitizeInput(post.username || 'User')}
                 </div>
+                <div class="post-time">${formatTimeAgo(post.timestamp)}</div>
             </div>
+            ${isOwnPost ? `
+                <div class="post-actions-menu">
+                    <button class="menu-btn" onclick="togglePostMenu('${post.id}')" aria-label="Post options">⋮</button>
+                    <div class="dropdown-menu" id="menu-${post.id}">
+                        <div class="dropdown-item" onclick="editPost('${post.id}')">
+                            <span>✏️</span> Edit
+                        </div>
+                        <div class="dropdown-item danger" onclick="deletePost('${post.id}')">
+                            <span>🗑️</span> Delete
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
         </div>
-        ${mediaElement}
-        ${post.caption ? `<div class="post-content"><div class="post-caption">${post.caption}</div></div>` : ''}
-        <div class="post-actions">
-            <div style="position: relative;">
-                <button class="action-btn ${userReaction ? 'active' : ''}" onclick="toggleReactionPicker('${post.id}')">
-                    ${userReaction ? REACTIONS[userReaction].emoji : '👍'} 
-                    ${reactionCount > 0 ? reactionCount : 'Like'}
-                </button>
-                <div class="reaction-picker" id="reactions-${post.id}">
-                    ${Object.keys(REACTIONS).map(key => 
-                        `<span class="reaction-option" onclick="addReaction('${post.id}', '${key}')">${REACTIONS[key].emoji}</span>`
-                    ).join('')}
-                </div>
-            </div>
-            <button class="action-btn" onclick="sharePost('${post.id}')">
-                🔄 Share
+        ${post.caption ? `<p class="post-caption">${sanitizeInput(post.caption)}</p>` : ''}
+        ${mediaHTML}
+        <div class="post-reactions" role="group" aria-label="Reactions">
+            ${reactionsHTML}
+        </div>
+        <div class="post-footer">
+            <button class="share-btn" onclick="sharePost('${post.id}')" aria-label="Share post">
+                <span aria-hidden="true">🔗</span> Share
             </button>
         </div>
     `;
     
-    return postDiv;
+    return article;
 }
 
-function getTimeAgo(timestamp) {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    
-    if (seconds < 60) return 'Just now';
-    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
-    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
-    if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
-    return new Date(timestamp).toLocaleDateString();
+function getUserTopBadge(userId) {
+    // This would need to fetch user data - simplified for now
+    return '';
 }
 
 // ========================================
-// REACTIONS
+// POST INTERACTIONS
 // ========================================
-function toggleReactionPicker(postId) {
-    const picker = document.getElementById('reactions-' + postId);
-    const allPickers = document.querySelectorAll('.reaction-picker');
-    
-    allPickers.forEach(p => {
-        if (p.id !== 'reactions-' + postId) {
-            p.classList.remove('show');
-        }
-    });
-    
-    picker.classList.toggle('show');
-    
-    // Close when clicking outside
-    setTimeout(() => {
-        document.addEventListener('click', function closePicker(e) {
-            if (!e.target.closest('.reaction-picker') && !e.target.closest('.action-btn')) {
-                picker.classList.remove('show');
-                document.removeEventListener('click', closePicker);
-            }
-        });
-    }, 0);
-}
-
-async function addReaction(postId, reactionType) {
+async function toggleReaction(postId, reactionName) {
     if (!isFirebaseInitialized) return;
     
+    // Rate limiting
+    const lastReactionTime = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_REACTION_TIME) || '0');
+    const now = Date.now();
+    if (now - lastReactionTime < CONFIG.RATE_LIMIT.REACTION_INTERVAL) {
+        return;
+    }
+    localStorage.setItem(STORAGE_KEYS.LAST_REACTION_TIME, now.toString());
+    
     try {
-        const postRef = database.ref('posts/' + postId);
-        const snapshot = await postRef.once('value');
-        const post = snapshot.val();
+        const reactionPath = `posts/${postId}/reactions/${reactionName}/${currentUserId}`;
+        const snapshot = await database.ref(reactionPath).once('value');
         
-        if (!post) return;
-        
-        const reactions = post.reactions || {};
-        const previousReaction = reactions[currentUserId];
-        
-        if (previousReaction === reactionType) {
-            delete reactions[currentUserId];
+        if (snapshot.exists()) {
+            // Remove reaction
+            await database.ref(reactionPath).remove();
         } else {
-            reactions[currentUserId] = reactionType;
+            // Add reaction
+            await database.ref(reactionPath).set(true);
         }
         
-        await postRef.update({ reactions });
-        
-        // Close picker
-        document.getElementById('reactions-' + postId).classList.remove('show');
-        
+        // Refresh post display
+        await refreshPost(postId);
+        await updateStatsDisplay();
     } catch (error) {
-        console.error('Error adding reaction:', error);
+        handleError(error, 'toggleReaction');
     }
 }
 
-// Double-click to like
-function doubleClickLike(postId) {
-    const postElement = document.querySelector(`[data-post-id="${postId}"]`);
-    const mediaElement = postElement.querySelector('.post-media');
+async function refreshPost(postId) {
+    if (!isFirebaseInitialized) return;
     
-    // Create heart animation
-    const heart = document.createElement('div');
-    heart.className = 'like-heart';
-    heart.textContent = '❤️';
-    heart.style.position = 'absolute';
-    heart.style.left = '50%';
-    heart.style.top = '50%';
-    mediaElement.parentElement.style.position = 'relative';
-    mediaElement.parentElement.appendChild(heart);
-    
-    setTimeout(() => heart.remove(), 1000);
-    
-    // Add like reaction
-    addReaction(postId, 'LOVE');
+    try {
+        const snapshot = await database.ref(`posts/${postId}`).once('value');
+        const post = { id: snapshot.key, ...snapshot.val() };
+        
+        const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+        if (postElement) {
+            const newElement = createPostElement(post);
+            postElement.replaceWith(newElement);
+        }
+    } catch (error) {
+        console.error('Error refreshing post:', error);
+    }
 }
 
-// ========================================
-// POST ACTIONS
-// ========================================
-function toggleShareMenu(event, postId) {
-    event.stopPropagation();
-    const menu = document.getElementById('share-' + postId);
-    const allMenus = document.querySelectorAll('.share-dropdown');
+function togglePostMenu(postId) {
+    const menu = document.getElementById(`menu-${postId}`);
     
-    allMenus.forEach(m => {
-        if (m.id !== 'share-' + postId) {
-            m.classList.remove('show');
-        }
+    // Close all other menus
+    document.querySelectorAll('.dropdown-menu').forEach(m => {
+        if (m !== menu) m.classList.remove('show');
     });
     
     menu.classList.toggle('show');
-    
-    setTimeout(() => {
-        document.addEventListener('click', function closeMenu(e) {
-            if (!e.target.closest('.share-menu')) {
-                menu.classList.remove('show');
-                document.removeEventListener('click', closeMenu);
-            }
-        });
-    }, 0);
 }
 
-function copyLink(postId) {
-    const url = window.location.origin + window.location.pathname + '#post-' + postId;
-    navigator.clipboard.writeText(url);
-    showNotification('Link copied!');
-}
+// Close menus when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.post-actions-menu')) {
+        document.querySelectorAll('.dropdown-menu').forEach(menu => {
+            menu.classList.remove('show');
+        });
+    }
+});
 
 async function deletePost(postId) {
     if (!confirm('Are you sure you want to delete this post?')) return;
     
+    if (!isFirebaseInitialized) return;
+    
     try {
-        await database.ref('posts/' + postId).remove();
-        showNotification('Post deleted');
-        updateStatsDisplay();
+        await database.ref(`posts/${postId}`).remove();
+        
+        const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+        if (postElement) {
+            postElement.style.animation = 'slideUp 0.3s ease-out reverse';
+            setTimeout(() => postElement.remove(), 300);
+        }
+        
+        showNotification('Post deleted successfully');
+        await updateStatsDisplay();
+        await checkBadges();
     } catch (error) {
-        console.error('Error deleting post:', error);
-        alert('Failed to delete post');
+        handleError(error, 'deletePost');
     }
 }
 
-function reportPost(postId, username) {
-    const reason = prompt('Please tell us why you\'re reporting this post:');
-    if (!reason) return;
-    
-    const report = {
-        postId: postId,
-        reportedBy: currentUserId,
-        reportedUser: username,
-        reason: reason,
-        timestamp: Date.now()
-    };
-    
-    database.ref('reports/' + Date.now()).set(report);
-    
-    // Send email via FormSubmit
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'https://formsubmit.co/ayoubnware1@gmail.com';
-    form.innerHTML = `
-        <input type="hidden" name="_subject" value="SnapCircle Report">
-        <input type="hidden" name="Post ID" value="${postId}">
-        <input type="hidden" name="Reported User" value="${username}">
-        <input type="hidden" name="Reported By" value="${currentUsername}">
-        <input type="hidden" name="Reason" value="${reason}">
-        <input type="hidden" name="_captcha" value="false">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-    
-    showNotification('Report submitted. Thank you!');
+function editPost(postId) {
+    showNotification('Edit feature coming soon!', 'info');
+    togglePostMenu(postId);
 }
 
 function sharePost(postId) {
-    const postElement = document.querySelector(`[data-post-id="${postId}"]`);
-    const username = postElement.getAttribute('data-username');
-    const caption = postElement.getAttribute('data-caption');
-    
-    const text = `Check out this post by ${username} on SnapCircle! ${caption}`;
-    const url = window.location.origin + window.location.pathname + '#post-' + postId;
+    const url = `${window.location.origin}${window.location.pathname}?post=${postId}`;
     
     if (navigator.share) {
-        navigator.share({ title: 'SnapCircle Post', text: text, url: url });
+        navigator.share({
+            title: 'Check out this post on SnapCircle',
+            url: url
+        }).catch(error => console.log('Error sharing:', error));
     } else {
-        copyLink(postId);
+        navigator.clipboard.writeText(url).then(() => {
+            showNotification('Link copied to clipboard!');
+        }).catch(error => {
+            console.error('Error copying:', error);
+        });
     }
 }
 
-function openContactForm() {
-    const message = prompt('Send us a message:');
-    if (!message) return;
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'https://formsubmit.co/ayoubnware1@gmail.com';
-    form.innerHTML = `
-        <input type="hidden" name="_subject" value="SnapCircle Contact">
-        <input type="hidden" name="From" value="${currentUsername}">
-        <input type="hidden" name="User ID" value="${currentUserId}">
-        <input type="hidden" name="Message" value="${message}">
-        <input type="hidden" name="_captcha" value="false">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-    
-    showNotification('Message sent!');
+function openImageViewer(imageUrl) {
+    // Simple image viewer - could be enhanced with a modal
+    window.open(imageUrl, '_blank');
 }
 
 // ========================================
 // SEARCH
 // ========================================
-function searchPosts(query) {
-    const posts = document.querySelectorAll('.post');
-    query = query.toLowerCase();
+const searchPosts = debounce(async function(query) {
+    if (!isFirebaseInitialized) return;
     
-    posts.forEach(post => {
-        const username = post.getAttribute('data-username').toLowerCase();
-        const caption = post.getAttribute('data-caption').toLowerCase();
+    const feed = document.getElementById('feed');
+    
+    if (!query.trim()) {
+        // Reload all posts
+        lastPostId = null;
+        feed.innerHTML = '';
+        await loadPostsWithPagination();
+        return;
+    }
+    
+    const searchTerm = query.toLowerCase().trim();
+    
+    try {
+        const snapshot = await database.ref('posts').once('value');
+        const matchingPosts = [];
         
-        if (username.includes(query) || caption.includes(query)) {
-            post.style.display = 'block';
+        snapshot.forEach(snap => {
+            const post = { id: snap.key, ...snap.val() };
+            const caption = (post.caption || '').toLowerCase();
+            const username = (post.username || '').toLowerCase();
+            
+            if (caption.includes(searchTerm) || username.includes(searchTerm)) {
+                matchingPosts.push(post);
+            }
+        });
+        
+        feed.innerHTML = '';
+        
+        if (matchingPosts.length === 0) {
+            feed.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔍</div>
+                    <h3>No results found</h3>
+                    <p>Try searching for something else</p>
+                </div>
+            `;
         } else {
-            post.style.display = 'none';
+            matchingPosts.sort((a, b) => b.timestamp - a.timestamp);
+            matchingPosts.forEach(post => {
+                const postElement = createPostElement(post);
+                feed.appendChild(postElement);
+            });
         }
-    });
-}
+    } catch (error) {
+        handleError(error, 'searchPosts');
+    }
+}, CONFIG.DEBOUNCE_DELAY);
 
 // ========================================
-// PROFILE MODAL
+// PROFILE VIEW
 // ========================================
 async function viewProfile(userId) {
+    if (!isFirebaseInitialized || !userId) return;
+    
     const modal = document.getElementById('profileModal');
     
     try {
+        // Get user data
         const userSnapshot = await database.ref('users/' + userId).once('value');
         const userData = userSnapshot.val() || {};
         
-        const postsSnapshot = await database.ref('posts').orderByChild('userId').equalTo(userId).once('value');
+        // Get user posts
+        const postsSnapshot = await database.ref('posts')
+            .orderByChild('userId')
+            .equalTo(userId)
+            .once('value');
+        
         const posts = [];
         let totalReactions = 0;
-        let usernameFromPost = '';
-        let avatarColorFromPost = 'default';
+        let usernameFromPost = null;
+        let avatarColorFromPost = null;
         
-        postsSnapshot.forEach(child => {
-            const post = child.val();
+        postsSnapshot.forEach(snap => {
+            const post = { id: snap.key, ...snap.val() };
             posts.push(post);
-            totalReactions += post.reactions ? Object.keys(post.reactions).length : 0;
-            // Get username and color from their posts if not in users table
+            
+            if (post.reactions) {
+                totalReactions += Object.keys(post.reactions).length;
+            }
+            
             if (!usernameFromPost && post.username) {
                 usernameFromPost = post.username;
             }
@@ -905,8 +1204,9 @@ async function viewProfile(userId) {
         const bio = userData.bio || '';
         const streak = userData.streak || 0;
         const badges = userData.badges || [];
-        const avatarColor = userData.avatarColor || avatarColorFromPost;
+        const avatarColor = userData.avatarColor || avatarColorFromPost || 'default';
         
+        // Update modal
         document.getElementById('profileUsername').textContent = username;
         document.getElementById('profileBio').textContent = bio;
         document.getElementById('profileBio').style.display = bio ? 'block' : 'none';
@@ -922,9 +1222,10 @@ async function viewProfile(userId) {
         // Display badges
         const badgesDisplay = document.getElementById('profileBadgesDisplay');
         badgesDisplay.innerHTML = badges.map(badgeKey => 
-            `<span class="profile-badge" title="${BADGES[badgeKey].name}">${BADGES[badgeKey].emoji}</span>`
+            `<span class="profile-badge" title="${BADGES[badgeKey]?.name || ''}" role="listitem">${BADGES[badgeKey]?.emoji || ''}</span>`
         ).join('');
         
+        // Display posts
         const postsGrid = document.getElementById('profilePosts');
         postsGrid.innerHTML = '';
         
@@ -932,24 +1233,36 @@ async function viewProfile(userId) {
         posts.forEach(post => {
             const thumb = document.createElement('div');
             thumb.className = 'profile-post-thumb';
+            thumb.setAttribute('role', 'listitem');
             thumb.onclick = () => {
                 closeProfileModal();
-                document.querySelector(`[data-post-id="${post.id}"]`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
+                if (postElement) {
+                    postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             };
             
-            if (post.mediaType === 'video') {
-                thumb.innerHTML = `<video src="${post.mediaUrl}"></video>`;
+            if (post.mediaUrl) {
+                if (post.mediaType === 'video') {
+                    thumb.innerHTML = `<video src="${post.mediaUrl}" muted></video>`;
+                } else {
+                    thumb.innerHTML = `<img src="${post.mediaUrl}" alt="Post thumbnail">`;
+                }
             } else {
-                thumb.innerHTML = `<img src="${post.mediaUrl}" alt="Post">`;
+                thumb.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); font-size: 14px; color: var(--text-secondary);">Text Post</div>`;
             }
             
             postsGrid.appendChild(thumb);
         });
         
+        if (posts.length === 0) {
+            postsGrid.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No posts yet</p>';
+        }
+        
         modal.classList.add('show');
         
     } catch (error) {
-        console.error('Error loading profile:', error);
+        handleError(error, 'viewProfile');
     }
 }
 
@@ -958,45 +1271,45 @@ function closeProfileModal() {
 }
 
 // ========================================
-// UTILITY FUNCTIONS
+// STATS
 // ========================================
-function showNotification(message) {
-    const notification = document.getElementById('copyNotification');
-    notification.textContent = message;
-    notification.classList.add('show');
+async function updateStatsDisplay() {
+    if (!isFirebaseInitialized) return;
     
-    setTimeout(() => {
-        notification.classList.remove('show');
-    }, 3000);
-}
-
-function setupScrollButton() {
-    const scrollBtn = document.getElementById('scrollTopBtn');
-    
-    window.addEventListener('scroll', () => {
-        if (window.scrollY > 300) {
-            scrollBtn.style.display = 'block';
-        } else {
-            scrollBtn.style.display = 'none';
-        }
-    });
-}
-
-function scrollToTop() {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+        const postsSnapshot = await database.ref('posts')
+            .orderByChild('userId')
+            .equalTo(currentUserId)
+            .once('value');
+        
+        let postCount = 0;
+        let totalLikes = 0;
+        
+        postsSnapshot.forEach(snap => {
+            postCount++;
+            const post = snap.val();
+            if (post.reactions) {
+                totalLikes += Object.keys(post.reactions).length;
+            }
+        });
+        
+        document.getElementById('userPostCount').textContent = postCount;
+        document.getElementById('userLikesCount').textContent = totalLikes;
+    } catch (error) {
+        console.error('Error updating stats:', error);
+    }
 }
 
 // ========================================
-// SUGGESTED USERS & TRENDING
+// SUGGESTED USERS
 // ========================================
 async function loadSuggestedUsers() {
+    if (!isFirebaseInitialized) return;
+    
     try {
-        const usersSnapshot = await database.ref('users').limitToFirst(10).once('value');
         const postsSnapshot = await database.ref('posts').limitToLast(100).once('value');
-        
         const userStats = {};
         
-        // Calculate user activity
         postsSnapshot.forEach(postSnap => {
             const post = postSnap.val();
             if (post.userId !== currentUserId) {
@@ -1014,7 +1327,6 @@ async function loadSuggestedUsers() {
             }
         });
         
-        // Sort by most active
         const topUsers = Object.values(userStats)
             .sort((a, b) => (b.postCount + b.reactionCount) - (a.postCount + a.reactionCount))
             .slice(0, 5);
@@ -1026,24 +1338,24 @@ async function loadSuggestedUsers() {
             const avatarGradient = AVATAR_COLORS[user.avatarColor] || AVATAR_COLORS.default;
             const li = document.createElement('li');
             li.className = 'suggestion-item';
+            li.setAttribute('role', 'listitem');
             li.onclick = () => viewProfile(user.userId);
             li.innerHTML = `
-                <div class="suggestion-avatar" style="background: ${avatarGradient}">
+                <div class="suggestion-avatar" style="background: ${avatarGradient}" aria-hidden="true">
                     ${user.username.charAt(0).toUpperCase()}
                 </div>
                 <div class="suggestion-info">
-                    <div class="suggestion-name">${user.username}</div>
+                    <div class="suggestion-name">${sanitizeInput(user.username)}</div>
                     <div class="suggestion-meta">${user.postCount} posts · ${user.reactionCount} reactions</div>
                 </div>
             `;
             suggestionsList.appendChild(li);
         });
         
-        // Add default if no users found
         if (topUsers.length === 0) {
             suggestionsList.innerHTML = `
-                <li class="suggestion-item">
-                    <div class="suggestion-avatar">S</div>
+                <li class="suggestion-item" role="listitem">
+                    <div class="suggestion-avatar" aria-hidden="true">S</div>
                     <div class="suggestion-info">
                         <div class="suggestion-name">SnapCircle</div>
                         <div class="suggestion-meta">Official Account</div>
@@ -1056,6 +1368,9 @@ async function loadSuggestedUsers() {
     }
 }
 
+// ========================================
+// TRENDING TOPICS
+// ========================================
 function setupTrendingTopics() {
     const trendingItems = document.querySelectorAll('.trending-item');
     trendingItems.forEach(item => {
@@ -1067,6 +1382,25 @@ function setupTrendingTopics() {
             searchInput.scrollIntoView({ behavior: 'smooth' });
         });
     });
+}
+
+// ========================================
+// SCROLL BUTTON
+// ========================================
+function setupScrollButton() {
+    const scrollBtn = document.getElementById('scrollTopBtn');
+    
+    window.addEventListener('scroll', () => {
+        if (window.scrollY > 300) {
+            scrollBtn.style.display = 'flex';
+        } else {
+            scrollBtn.style.display = 'none';
+        }
+    });
+}
+
+function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ========================================
@@ -1107,3 +1441,20 @@ function activatePartyMode() {
         style.remove();
     }, 10000);
 }
+
+// ========================================
+// CONTACT FORM (Placeholder)
+// ========================================
+function openContactForm() {
+    showNotification('Contact form coming soon! Email us at: hello@snapcircle.com', 'info');
+}
+
+// ========================================
+// CLEANUP
+// ========================================
+window.addEventListener('beforeunload', () => {
+    // Remove Firebase listeners
+    if (postsListener) {
+        database.ref('posts').off('child_added', postsListener);
+    }
+});
