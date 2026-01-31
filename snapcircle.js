@@ -275,12 +275,16 @@ async function createPost() {
         // Create post object
         postBtn.textContent = 'Saving...';
         const timestamp = Date.now();
+        
+        // Remove any line breaks from mediaData to prevent HTML errors
+        const cleanMediaData = mediaData.replace(/[\r\n]/g, '');
+        
         const post = {
             id: 'post_' + timestamp,
             username: currentUsername,
             userId: currentUserId,
             caption: caption,
-            mediaUrl: mediaData,  // base64 string
+            mediaUrl: cleanMediaData,  // base64 string without line breaks
             mediaType: isVideo ? 'video' : 'image',
             reactions: {},
             comments: [],
@@ -350,9 +354,12 @@ function createPostHTML(post) {
     console.log('Media URL length:', post.mediaUrl ? post.mediaUrl.length : 'null');
     console.log('Media URL starts with:', post.mediaUrl ? post.mediaUrl.substring(0, 50) : 'null');
     
+    // Clean mediaUrl to remove any line breaks that might cause errors
+    const cleanMediaUrl = post.mediaUrl ? post.mediaUrl.replace(/[\r\n]/g, '') : '';
+    
     const mediaElement = post.mediaType === 'video' 
-        ? `<video class="post-media" src="${post.mediaUrl}" controls></video>`
-        : `<img class="post-media" src="${post.mediaUrl}" alt="Post" onerror="console.error('Image failed to load for post ${post.id}')">`;
+        ? `<video class="post-media" src="${cleanMediaUrl}" controls></video>`
+        : `<img class="post-media" src="${cleanMediaUrl}" alt="Post" onerror="console.error('Image failed to load for post ${post.id}')">`;
     
     // Count reactions
     const reactions = post.reactions || {};
