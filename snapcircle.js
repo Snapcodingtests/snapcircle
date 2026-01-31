@@ -264,13 +264,29 @@ async function createPost() {
             postBtn.textContent = 'Converting video...';
             mediaData = await new Promise((resolve) => {
                 const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target.result);
+                reader.onload = (e) => {
+                    console.log('Video converted, data URL length:', e.target.result.length);
+                    resolve(e.target.result);
+                };
                 reader.readAsDataURL(selectedFile);
             });
         } else {
-            // Compress images to base64
-            postBtn.textContent = 'Compressing image...';
-            mediaData = await compressImageToBase64(selectedFile);
+            // Convert images directly to base64 WITHOUT compression (testing)
+            postBtn.textContent = 'Converting image...';
+            console.log('Converting image to base64...');
+            mediaData = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    console.log('Image converted successfully!');
+                    console.log('Data URL starts with:', e.target.result.substring(0, 50));
+                    console.log('Data URL length:', e.target.result.length);
+                    resolve(e.target.result);
+                };
+                reader.onerror = (e) => {
+                    console.error('FileReader error:', e);
+                };
+                reader.readAsDataURL(selectedFile);
+            });
         }
 
         // Create post object
@@ -345,9 +361,15 @@ function displayPosts(posts) {
 function createPostHTML(post) {
     const timeAgo = getTimeAgo(post.timestamp);
     const userInitial = post.username.charAt(0).toUpperCase();
+    
+    console.log('Creating post HTML for:', post.id);
+    console.log('Media type:', post.mediaType);
+    console.log('Media URL length:', post.mediaUrl ? post.mediaUrl.length : 'null');
+    console.log('Media URL starts with:', post.mediaUrl ? post.mediaUrl.substring(0, 50) : 'null');
+    
     const mediaElement = post.mediaType === 'video' 
         ? `<video class="post-media" src="${post.mediaUrl}" controls></video>`
-        : `<img class="post-media" src="${post.mediaUrl}" alt="Post">`;
+        : `<img class="post-media" src="${post.mediaUrl}" alt="Post" onerror="console.error('Image failed to load for post ${post.id}')">`;
     
     // Count reactions
     const reactions = post.reactions || {};
