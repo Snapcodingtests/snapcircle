@@ -2,14 +2,15 @@
 // FIREBASE CONFIGURATION
 // ========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyD8g1ogr4Hjs1jRBlmUACMQ-4huZqjAnm8",
-  authDomain: "snapcircle-d4955.firebaseapp.com",
-  databaseURL: "https://snapcircle-d4955-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "snapcircle-d4955",
-  storageBucket: "snapcircle-d4955.firebasestorage.app",
-  messagingSenderId: "12069426076",
-  appId: "1:12069426076:web:24496f14b46b2506606e59"
+    apiKey: "AIzaSyD8g1ogr4Hjs1jRBlmUACMQ-4huZqjAnm8",
+    authDomain: "snapcircle-d4955.firebaseapp.com",
+    databaseURL: "https://snapcircle-d4955-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "snapcircle-d4955",
+    storageBucket: "snapcircle-d4955.firebasestorage.app",
+    messagingSenderId: "12069426076",
+    appId: "1:12069426076:web:24496f14b46b2506606e59"
 };
+
 // Initialize Firebase
 let app, database;
 let isFirebaseInitialized = false;
@@ -277,7 +278,8 @@ async function createPost() {
         postBtn.textContent = 'Share Post';
         postBtn.disabled = false;
     }
-        }
+}
+
 // ========================================
 // LOAD POSTS FROM FIREBASE
 // ========================================
