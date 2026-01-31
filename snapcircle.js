@@ -2,7 +2,7 @@
 // FIREBASE CONFIGURATION
 // ========================================
 const firebaseConfig = {
-    apiKey: "E",
+    apiKey: "AIzaSyD8g1ogr4Hjs1jRBlmUACMQ-4huZqjAnm8",
     authDomain: "snapcircle-d4955.firebaseapp.com",
     databaseURL: "https://snapcircle-d4955-default-rtdb.europe-west1.firebasedatabase.app",
     projectId: "snapcircle-d4955",
