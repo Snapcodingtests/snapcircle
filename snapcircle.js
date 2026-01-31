@@ -265,11 +265,33 @@ async function createPost() {
                 reader.readAsDataURL(selectedFile);
             });
         } else {
-            // Compress images MORE aggressively for base64
-            postBtn.textContent = 'Compressing image...';
-            console.log('Converting image to base64...');
-            mediaData = await compressImageToBase64(selectedFile);
-            console.log('Final compressed image size:', mediaData.length);
+            // Check file size first
+            if (selectedFile.size > 2 * 1024 * 1024) { // 2MB limit for images
+                alert('Image is too large. Maximum size is 2MB. Please use a smaller image.');
+                postBtn.textContent = 'Share Post';
+                postBtn.disabled = false;
+                return;
+            }
+            
+            // SKIP COMPRESSION - just convert directly
+            postBtn.textContent = 'Converting image...';
+            console.log('Converting image directly to base64 (no compression)...');
+            mediaData = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const result = e.target.result;
+                    console.log('✅ Image converted successfully!');
+                    console.log('Data URL starts with:', result.substring(0, 50));
+                    console.log('Data URL length:', result.length);
+                    console.log('First 100 chars after base64:', result.substring(result.indexOf(',') + 1, result.indexOf(',') + 100));
+                    resolve(result);
+                };
+                reader.onerror = (e) => {
+                    console.error('❌ FileReader error:', e);
+                    reject(e);
+                };
+                reader.readAsDataURL(selectedFile);
+            });
         }
 
         // Create post object
@@ -278,6 +300,8 @@ async function createPost() {
         
         // Remove any line breaks from mediaData to prevent HTML errors
         const cleanMediaData = mediaData.replace(/[\r\n]/g, '');
+        
+        console.log('Saving to Firebase with mediaData length:', cleanMediaData.length);
         
         const post = {
             id: 'post_' + timestamp,
@@ -294,6 +318,8 @@ async function createPost() {
         // Save to Firebase Database
         await database.ref('posts/' + post.id).set(post);
 
+        console.log('✅ Post saved successfully!');
+
         // Reset form
         selectedFile = null;
         document.getElementById('fileInput').value = '';
@@ -305,7 +331,7 @@ async function createPost() {
         postBtn.disabled = false;
 
     } catch (error) {
-        console.error('Error creating post:', error);
+        console.error('❌ Error creating post:', error);
         alert('Error creating post: ' + error.message);
         postBtn.textContent = 'Share Post';
         postBtn.disabled = false;
@@ -359,7 +385,9 @@ function createPostHTML(post) {
     
     const mediaElement = post.mediaType === 'video' 
         ? `<video class="post-media" src="${cleanMediaUrl}" controls></video>`
-        : `<img class="post-media" src="${cleanMediaUrl}" alt="Post" onerror="console.error('Image failed to load for post ${post.id}')">`;
+        : `<img class="post-media" src="${cleanMediaUrl}" alt="Post" 
+            onload="console.log('✅ Image loaded successfully for post ${post.id}')" 
+            onerror="console.error('❌ Image FAILED to load for post ${post.id}. Check if base64 data is valid.')">`;
     
     // Count reactions
     const reactions = post.reactions || {};
