@@ -448,6 +448,14 @@ function createPostHTML(post) {
                         <div class="share-option" onclick="shareProfile('${post.userId}')">
                             👤 Share Profile
                         </div>
+                        <div class="share-option" onclick="reportPost('${post.id}')">
+                            🚩 Report
+                        </div>
+                        ${post.userId === currentUserId ? `
+                        <div class="share-option delete-option" onclick="deletePost('${post.id}')">
+                            🗑️ Delete Post
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -768,6 +776,212 @@ function getTimeAgo(timestamp) {
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
     return 'just now';
+}
+
+// ========================================
+// DELETE POST
+// ========================================
+async function deletePost(postId) {
+    if (!confirm('Are you sure you want to delete this post? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        await database.ref('posts/' + postId).remove();
+        console.log('✅ Post deleted successfully!');
+    } catch (error) {
+        console.error('❌ Error deleting post:', error);
+        alert('Error deleting post. Please try again.');
+    }
+}
+
+// ========================================
+// REPORT POST / CONTACT
+// ========================================
+function reportPost(postId) {
+    const reason = prompt('Why are you reporting this post?\n\n(Spam, Inappropriate, Harassment, Other)');
+    
+    if (!reason) return;
+    
+    // Create report email
+    const reportData = {
+        postId: postId,
+        reason: reason,
+        reportedBy: currentUsername,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Save report to Firebase
+    database.ref('reports/' + Date.now()).set(reportData);
+    
+    // Send email notification
+    sendContactEmail(
+        'Post Report',
+        `Post ID: ${postId}\nReason: ${reason}\nReported by: ${currentUsername}\nTime: ${new Date().toLocaleString()}`
+    );
+    
+    alert('Thank you for your report. We will review it shortly.');
+}
+
+function openContactForm() {
+    const message = prompt('Send us a message, question, or feedback:');
+    
+    if (!message) return;
+    
+    sendContactEmail(
+        'User Feedback',
+        `From: ${currentUsername}\nMessage: ${message}\nTime: ${new Date().toLocaleString()}`
+    );
+    
+    alert('Message sent! We\'ll get back to you soon. 💙');
+}
+
+function sendContactEmail(subject, body) {
+    // Using FormSubmit.co - a free form to email service
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'https://formsubmit.co/ayoubnware1QandA@gmail.com';
+    form.style.display = 'none';
+    
+    const subjectInput = document.createElement('input');
+    subjectInput.type = 'hidden';
+    subjectInput.name = '_subject';
+    subjectInput.value = `SnapCircle: ${subject}`;
+    
+    const bodyInput = document.createElement('input');
+    bodyInput.type = 'hidden';
+    bodyInput.name = 'message';
+    bodyInput.value = body;
+    
+    const nextInput = document.createElement('input');
+    nextInput.type = 'hidden';
+    nextInput.name = '_next';
+    nextInput.value = window.location.href;
+    
+    const captchaInput = document.createElement('input');
+    captchaInput.type = 'hidden';
+    captchaInput.name = '_captcha';
+    captchaInput.value = 'false';
+    
+    form.appendChild(subjectInput);
+    form.appendChild(bodyInput);
+    form.appendChild(nextInput);
+    form.appendChild(captchaInput);
+    
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// ========================================
+// FUN FEATURES
+// ========================================
+
+// Double-tap to like
+let lastTap = 0;
+document.addEventListener('dblclick', function(e) {
+    const postMedia = e.target.closest('.post-media');
+    if (postMedia) {
+        const post = postMedia.closest('.post');
+        const postId = post.querySelector('.post-options').getAttribute('onclick').match(/'([^']+)'/)[1];
+        
+        // Find the like button and click it
+        const likeBtn = post.querySelector('.reaction-btn[title="like"]');
+        if (likeBtn && !likeBtn.classList.contains('active')) {
+            likeBtn.click();
+            
+            // Show heart animation
+            showHeartAnimation(postMedia);
+        }
+    }
+});
+
+function showHeartAnimation(element) {
+    const heart = document.createElement('div');
+    heart.innerHTML = '❤️';
+    heart.style.cssText = `
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0);
+        font-size: 100px;
+        pointer-events: none;
+        z-index: 1000;
+        animation: heartPop 0.8s ease-out;
+    `;
+    
+    element.parentElement.style.position = 'relative';
+    element.parentElement.appendChild(heart);
+    
+    setTimeout(() => heart.remove(), 800);
+}
+
+// Search functionality
+function searchPosts(query) {
+    const posts = document.querySelectorAll('.post');
+    const lowerQuery = query.toLowerCase();
+    
+    posts.forEach(post => {
+        const username = post.querySelector('.post-username').textContent.toLowerCase();
+        const caption = post.querySelector('.post-caption')?.textContent.toLowerCase() || '';
+        
+        if (username.includes(lowerQuery) || caption.includes(lowerQuery)) {
+            post.style.display = 'block';
+        } else {
+            post.style.display = 'none';
+        }
+    });
+}
+
+// Scroll to top button
+window.addEventListener('scroll', function() {
+    const scrollBtn = document.getElementById('scrollTopBtn');
+    if (scrollBtn) {
+        if (window.pageYOffset > 300) {
+            scrollBtn.style.display = 'block';
+        } else {
+            scrollBtn.style.display = 'none';
+        }
+    }
+});
+
+function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ========================================
+// EASTER EGG
+// ========================================
+let konamiCode = [];
+const konamiSequence = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+
+document.addEventListener('keydown', function(e) {
+    konamiCode.push(e.key);
+    konamiCode = konamiCode.slice(-10);
+    
+    if (konamiCode.join(',') === konamiSequence.join(',')) {
+        activatePartyMode();
+    }
+});
+
+function activatePartyMode() {
+    alert('🎉 PARTY MODE ACTIVATED! 🎊');
+    document.body.style.animation = 'rainbow 2s infinite';
+    
+    // Add rainbow animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes rainbow {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    setTimeout(() => {
+        document.body.style.animation = '';
+        style.remove();
+        alert('Party mode deactivated! 😊');
+    }, 10000);
 }
 
 // Check for shared links on page load
