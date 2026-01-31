@@ -7,8 +7,8 @@ const CONFIG = {
     MAX_USERNAME_LENGTH: 30,
     MAX_BIO_LENGTH: 150,
     POSTS_PER_PAGE: 20, // Load more posts at once
-    IMAGE_QUALITY: 0.8,
-    MAX_IMAGE_DIMENSION: 1920,
+    IMAGE_QUALITY: 0.92, // Higher quality to preserve colors
+    MAX_IMAGE_DIMENSION: 2048, // Allow larger images
     DEBOUNCE_DELAY: 300,
     RATE_LIMIT: {
         POST_INTERVAL: 10000, // 10 seconds between posts
@@ -576,16 +576,24 @@ async function handleFileSelect(file) {
         return;
     }
     
-    // Compress image if needed
-    if (file.type.startsWith('image/')) {
+    // For videos, use them directly without compression
+    if (file.type.startsWith('video/')) {
+        currentFile = file;
+        showPreview(currentFile);
+        return;
+    }
+    
+    // For images, only compress if they're too large
+    if (file.size > 2 * 1024 * 1024) { // Only compress if > 2MB
         try {
             currentFile = await compressImage(file);
+            showNotification('Image compressed for faster upload');
         } catch (error) {
-            handleError(error, 'Image compression');
-            return;
+            console.error('Compression failed, using original:', error);
+            currentFile = file; // Use original if compression fails
         }
     } else {
-        currentFile = file;
+        currentFile = file; // Use original for small images
     }
     
     // Show preview
@@ -616,12 +624,26 @@ async function compressImage(file) {
                 canvas.width = width;
                 canvas.height = height;
                 
-                const ctx = canvas.getContext('2d');
+                const ctx = canvas.getContext('2d', { alpha: true });
+                
+                // Fill with white background for transparency support
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, width, height);
+                
+                // Draw image
                 ctx.drawImage(img, 0, 0, width, height);
                 
+                // Convert to blob - use original type if PNG, otherwise JPEG
+                const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+                const quality = file.type === 'image/png' ? 0.95 : CONFIG.IMAGE_QUALITY;
+                
                 canvas.toBlob((blob) => {
-                    resolve(new File([blob], file.name, { type: 'image/jpeg' }));
-                }, 'image/jpeg', CONFIG.IMAGE_QUALITY);
+                    if (blob) {
+                        resolve(new File([blob], file.name, { type: outputType }));
+                    } else {
+                        reject(new Error('Failed to compress image'));
+                    }
+                }, outputType, quality);
             };
             img.onerror = reject;
             img.src = e.target.result;
