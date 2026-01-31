@@ -230,20 +230,16 @@ async function initializeApp() {
     
     // Load data if Firebase is initialized
     if (isFirebaseInitialized) {
-        // Load posts immediately without waiting
+        // Just load posts - that's all we need immediately
         loadPosts();
         
-        // Load user data in background
-        loadUserData().then(() => {
-            updateBadgeDisplay();
+        // Everything else can happen in the background without blocking
+        setTimeout(() => {
+            loadUserBadges();
             updateStatsDisplay();
-        });
-        
-        // Load suggested users in background
-        loadSuggestedUsers();
-        
-        // Setup realtime listeners last
-        setupRealtimeListeners();
+            loadSuggestedUsers();
+            setupRealtimeListeners();
+        }, 100);
     }
 }
 
@@ -393,114 +389,90 @@ function updateStreak() {
         });
     }
     
-    checkBadges();
+    // Check for streak badges
+    checkStreakBadges();
 }
 
 // ========================================
 // BADGES SYSTEM
 // ========================================
-async function loadUserData() {
+async function loadUserBadges() {
     if (!isFirebaseInitialized) return;
     
     try {
-        const snapshot = await database.ref('users/' + currentUserId).once('value');
-        const userData = snapshot.val() || {};
-        
-        userBadges = userData.badges || [];
-        
-        // Auto-award early bird badge
-        const usersSnapshot = await database.ref('users').once('value');
-        const totalUsers = usersSnapshot.numChildren();
-        
-        if (totalUsers <= 100 && !userBadges.includes('EARLY_BIRD')) {
-            userBadges.push('EARLY_BIRD');
-            await database.ref('users/' + currentUserId + '/badges').set(userBadges);
-            showNotification('🌅 You earned the Early Bird badge!');
-        }
-        
+        const snapshot = await database.ref('users/' + currentUserId + '/badges').once('value');
+        userBadges = snapshot.val() || [];
         updateBadgeDisplay();
     } catch (error) {
-        handleError(error, 'loadUserData');
+        console.error('Error loading badges:', error);
+        // Don't show error to user, just use empty badges
+        userBadges = [];
+        updateBadgeDisplay();
     }
 }
 
-async function checkBadges() {
+async function checkBadgesAfterPost() {
     if (!isFirebaseInitialized) return;
     
     try {
-        // Only check if we don't have all badges yet
-        if (userBadges.length >= Object.keys(BADGES).length) return;
-        
-        // Get user's posts count from a single query
+        // Simple count query
         const postsSnapshot = await database.ref('posts')
             .orderByChild('userId')
             .equalTo(currentUserId)
             .once('value');
         
         let postCount = 0;
-        let totalReactions = 0;
-        
-        postsSnapshot.forEach(snap => {
-            postCount++;
-            const post = snap.val();
-            if (post.reactions) {
-                totalReactions += Object.keys(post.reactions).length;
-            }
-        });
+        postsSnapshot.forEach(() => postCount++);
         
         const newBadges = [...userBadges];
-        let badgesEarned = false;
+        let changed = false;
         
-        // Check post-based badges
+        // Only check post-based badges
         if (postCount >= 1 && !newBadges.includes('FIRST_POST')) {
             newBadges.push('FIRST_POST');
-            showNotification('✨ You earned the First Post badge!');
-            badgesEarned = true;
+            showNotification('✨ First Post badge earned!');
+            changed = true;
         }
         if (postCount >= 10 && !newBadges.includes('ACTIVE_USER')) {
             newBadges.push('ACTIVE_USER');
-            showNotification('🔥 You earned the Active User badge!');
-            badgesEarned = true;
+            showNotification('🔥 Active User badge earned!');
+            changed = true;
         }
         if (postCount >= 50 && !newBadges.includes('SUPER_CREATOR')) {
             newBadges.push('SUPER_CREATOR');
-            showNotification('💎 You earned the Super Creator badge!');
-            badgesEarned = true;
+            showNotification('💎 Super Creator badge earned!');
+            changed = true;
         }
         
-        // Check reaction-based badges
-        if (totalReactions >= 100 && !newBadges.includes('INFLUENCER')) {
-            newBadges.push('INFLUENCER');
-            showNotification('⭐ You earned the Influencer badge!');
-            badgesEarned = true;
-        }
-        if (totalReactions >= 500 && !newBadges.includes('POPULAR')) {
-            newBadges.push('POPULAR');
-            showNotification('🌟 You earned the Popular badge!');
-            badgesEarned = true;
-        }
-        
-        // Check streak badges
-        if (currentStreak >= 7 && !newBadges.includes('WEEK_STREAK')) {
-            newBadges.push('WEEK_STREAK');
-            showNotification('🎯 You earned the Dedicated badge!');
-            badgesEarned = true;
-        }
-        if (currentStreak >= 30 && !newBadges.includes('MONTH_STREAK')) {
-            newBadges.push('MONTH_STREAK');
-            showNotification('👑 You earned the Loyal badge!');
-            badgesEarned = true;
-        }
-        
-        // Update only if badges changed
-        if (badgesEarned) {
+        if (changed) {
             userBadges = newBadges;
-            await database.ref('users/' + currentUserId + '/badges').set(userBadges);
+            database.ref('users/' + currentUserId + '/badges').set(userBadges);
             updateBadgeDisplay();
-            updateStatsDisplay();
         }
     } catch (error) {
         console.error('Error checking badges:', error);
+    }
+}
+
+function checkStreakBadges() {
+    const newBadges = [...userBadges];
+    let changed = false;
+    
+    if (currentStreak >= 7 && !newBadges.includes('WEEK_STREAK')) {
+        newBadges.push('WEEK_STREAK');
+        showNotification('🎯 Dedicated badge earned!');
+        changed = true;
+    }
+    if (currentStreak >= 30 && !newBadges.includes('MONTH_STREAK')) {
+        newBadges.push('MONTH_STREAK');
+        showNotification('👑 Loyal badge earned!');
+        changed = true;
+    }
+    
+    if (changed && isFirebaseInitialized) {
+        userBadges = newBadges;
+        database.ref('users/' + currentUserId + '/badges').set(userBadges);
+        updateBadgeDisplay();
     }
 }
 
@@ -784,8 +756,10 @@ async function createPost() {
         showNotification('Post created successfully!');
         
         // Check for badges in background (don't await)
-        checkBadges();
-        updateStatsDisplay();
+        setTimeout(() => {
+            checkBadgesAfterPost();
+            updateStatsDisplay();
+        }, 500);
         
     } catch (error) {
         handleError(error, 'createPost');
@@ -1013,15 +987,18 @@ async function refreshPost(postId) {
     
     try {
         const snapshot = await database.ref(`posts/${postId}`).once('value');
-        const post = { id: snapshot.key, ...snapshot.val() };
+        if (!snapshot.exists()) return;
         
+        const post = { id: snapshot.key, ...snapshot.val() };
         const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+        
         if (postElement) {
             const newElement = createPostElement(post);
             postElement.replaceWith(newElement);
         }
     } catch (error) {
         console.error('Error refreshing post:', error);
+        // Don't show error to user, post will just not update
     }
 }
 
@@ -1060,8 +1037,10 @@ async function deletePost(postId) {
         }
         
         showNotification('Post deleted successfully');
-        updateStatsDisplay();
-        checkBadges();
+        setTimeout(() => {
+            updateStatsDisplay();
+            checkBadgesAfterPost();
+        }, 500);
     } catch (error) {
         handleError(error, 'deletePost');
     }
@@ -1177,7 +1156,11 @@ async function viewProfile(userId) {
             posts.push(post);
             
             if (post.reactions) {
-                totalReactions += Object.keys(post.reactions).length;
+                Object.values(post.reactions).forEach(reactionType => {
+                    if (typeof reactionType === 'object') {
+                        totalReactions += Object.keys(reactionType).length;
+                    }
+                });
             }
             
             if (!usernameFromPost && post.username) {
@@ -1194,63 +1177,80 @@ async function viewProfile(userId) {
         const badges = userData.badges || [];
         const avatarColor = userData.avatarColor || avatarColorFromPost || 'default';
         
-        // Update modal
-        document.getElementById('profileUsername').textContent = username;
-        document.getElementById('profileBio').textContent = bio;
-        document.getElementById('profileBio').style.display = bio ? 'block' : 'none';
-        document.getElementById('profilePostCount').textContent = posts.length;
-        document.getElementById('profileReactionCount').textContent = totalReactions;
-        document.getElementById('profileStreakDisplay').textContent = streak;
+        // Update modal elements safely
+        const profileUsernameEl = document.getElementById('profileUsername');
+        const profileBioEl = document.getElementById('profileBio');
+        const profilePostCountEl = document.getElementById('profilePostCount');
+        const profileReactionCountEl = document.getElementById('profileReactionCount');
+        const profileStreakEl = document.getElementById('profileStreakDisplay');
+        const profileAvatarEl = document.getElementById('profileAvatar');
+        const profileBadgesEl = document.getElementById('profileBadgesDisplay');
+        const profilePostsEl = document.getElementById('profilePosts');
         
-        const avatarGradient = AVATAR_COLORS[avatarColor] || AVATAR_COLORS.default;
-        const profileAvatar = document.getElementById('profileAvatar');
-        profileAvatar.textContent = username.charAt(0).toUpperCase();
-        profileAvatar.style.background = avatarGradient;
+        if (profileUsernameEl) profileUsernameEl.textContent = username;
+        if (profileBioEl) {
+            profileBioEl.textContent = bio;
+            profileBioEl.style.display = bio ? 'block' : 'none';
+        }
+        if (profilePostCountEl) profilePostCountEl.textContent = posts.length;
+        if (profileReactionCountEl) profileReactionCountEl.textContent = totalReactions;
+        if (profileStreakEl) profileStreakEl.textContent = streak;
+        
+        if (profileAvatarEl) {
+            const avatarGradient = AVATAR_COLORS[avatarColor] || AVATAR_COLORS.default;
+            profileAvatarEl.textContent = username.charAt(0).toUpperCase();
+            profileAvatarEl.style.background = avatarGradient;
+        }
         
         // Display badges
-        const badgesDisplay = document.getElementById('profileBadgesDisplay');
-        badgesDisplay.innerHTML = badges.map(badgeKey => 
-            `<span class="profile-badge" title="${BADGES[badgeKey]?.name || ''}" role="listitem">${BADGES[badgeKey]?.emoji || ''}</span>`
-        ).join('');
+        if (profileBadgesEl) {
+            profileBadgesEl.innerHTML = badges.map(badgeKey => {
+                const badge = BADGES[badgeKey];
+                if (!badge) return '';
+                return `<span class="profile-badge" title="${badge.name}" role="listitem">${badge.emoji}</span>`;
+            }).join('');
+        }
         
         // Display posts
-        const postsGrid = document.getElementById('profilePosts');
-        postsGrid.innerHTML = '';
-        
-        posts.sort((a, b) => b.timestamp - a.timestamp);
-        posts.forEach(post => {
-            const thumb = document.createElement('div');
-            thumb.className = 'profile-post-thumb';
-            thumb.setAttribute('role', 'listitem');
-            thumb.onclick = () => {
-                closeProfileModal();
-                const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
-                if (postElement) {
-                    postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            };
+        if (profilePostsEl) {
+            profilePostsEl.innerHTML = '';
             
-            if (post.mediaUrl) {
-                if (post.mediaType === 'video') {
-                    thumb.innerHTML = `<video src="${post.mediaUrl}" muted></video>`;
+            posts.sort((a, b) => b.timestamp - a.timestamp);
+            posts.forEach(post => {
+                const thumb = document.createElement('div');
+                thumb.className = 'profile-post-thumb';
+                thumb.setAttribute('role', 'listitem');
+                thumb.onclick = () => {
+                    closeProfileModal();
+                    const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
+                    if (postElement) {
+                        postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                };
+                
+                if (post.mediaUrl) {
+                    if (post.mediaType === 'video') {
+                        thumb.innerHTML = `<video src="${post.mediaUrl}" muted></video>`;
+                    } else {
+                        thumb.innerHTML = `<img src="${post.mediaUrl}" alt="Post thumbnail">`;
+                    }
                 } else {
-                    thumb.innerHTML = `<img src="${post.mediaUrl}" alt="Post thumbnail">`;
+                    thumb.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); font-size: 14px; color: var(--text-secondary);">Text Post</div>`;
                 }
-            } else {
-                thumb.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); font-size: 14px; color: var(--text-secondary);">Text Post</div>`;
-            }
+                
+                profilePostsEl.appendChild(thumb);
+            });
             
-            postsGrid.appendChild(thumb);
-        });
-        
-        if (posts.length === 0) {
-            postsGrid.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No posts yet</p>';
+            if (posts.length === 0) {
+                profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No posts yet</p>';
+            }
         }
         
         modal.classList.add('show');
         
     } catch (error) {
-        handleError(error, 'viewProfile');
+        console.error('Error loading profile:', error);
+        showNotification('Failed to load profile', 'error');
     }
 }
 
@@ -1281,10 +1281,15 @@ async function updateStatsDisplay() {
             }
         });
         
-        document.getElementById('userPostCount').textContent = postCount;
-        document.getElementById('userLikesCount').textContent = totalLikes;
+        // Update elements if they exist
+        const postCountEl = document.getElementById('userPostCount');
+        const likesCountEl = document.getElementById('userLikesCount');
+        
+        if (postCountEl) postCountEl.textContent = postCount;
+        if (likesCountEl) likesCountEl.textContent = totalLikes;
     } catch (error) {
         console.error('Error updating stats:', error);
+        // Don't show error to user
     }
 }
 
@@ -1300,18 +1305,20 @@ async function loadSuggestedUsers() {
         
         postsSnapshot.forEach(postSnap => {
             const post = postSnap.val();
-            if (post.userId !== currentUserId) {
+            if (post.userId && post.userId !== currentUserId) {
                 if (!userStats[post.userId]) {
                     userStats[post.userId] = {
                         userId: post.userId,
-                        username: post.username,
+                        username: post.username || 'User',
                         avatarColor: post.avatarColor || 'default',
                         postCount: 0,
                         reactionCount: 0
                     };
                 }
                 userStats[post.userId].postCount++;
-                userStats[post.userId].reactionCount += post.reactions ? Object.keys(post.reactions).length : 0;
+                if (post.reactions) {
+                    userStats[post.userId].reactionCount += Object.keys(post.reactions).length;
+                }
             }
         });
         
@@ -1320,6 +1327,8 @@ async function loadSuggestedUsers() {
             .slice(0, 5);
         
         const suggestionsList = document.querySelector('.suggestions-list');
+        if (!suggestionsList) return;
+        
         suggestionsList.innerHTML = '';
         
         topUsers.forEach(user => {
@@ -1353,6 +1362,7 @@ async function loadSuggestedUsers() {
         }
     } catch (error) {
         console.error('Error loading suggested users:', error);
+        // Don't show error to user
     }
 }
 
