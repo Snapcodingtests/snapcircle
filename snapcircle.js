@@ -159,42 +159,71 @@ function removePreview() {
 // IMAGE COMPRESSION TO BASE64
 // ========================================
 async function compressImageToBase64(file) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = function(e) {
             const img = new Image();
+            img.crossOrigin = "anonymous"; // Handle CORS
+            
             img.onload = function() {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
+                try {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
 
-                const maxWidth = 1080;
-                const maxHeight = 1080;
+                    const maxWidth = 1080;
+                    const maxHeight = 1080;
 
-                if (width > height) {
-                    if (width > maxWidth) {
-                        height = height * (maxWidth / width);
-                        width = maxWidth;
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height = height * (maxWidth / width);
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width = width * (maxHeight / height);
+                            height = maxHeight;
+                        }
                     }
-                } else {
-                    if (height > maxHeight) {
-                        width = width * (maxHeight / height);
-                        height = maxHeight;
-                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext('2d', { willReadFrequently: false });
+                    
+                    // Fill with white background first (prevents transparency issues)
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, width, height);
+                    
+                    // Draw the image
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convert to compressed base64
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    
+                    console.log('Image compressed successfully, size:', compressedDataUrl.length);
+                    resolve(compressedDataUrl);
+                } catch (error) {
+                    console.error('Canvas error:', error);
+                    // Fallback: return original base64
+                    resolve(e.target.result);
                 }
-
-                canvas.width = width;
-                canvas.height = height;
-
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                // Convert to compressed base64
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                resolve(compressedDataUrl);
             };
+            
+            img.onerror = function(error) {
+                console.error('Image load error:', error);
+                // Fallback: return original base64
+                resolve(e.target.result);
+            };
+            
             img.src = e.target.result;
         };
+        
+        reader.onerror = function(error) {
+            console.error('FileReader error:', error);
+            reject(error);
+        };
+        
         reader.readAsDataURL(file);
     });
 }
