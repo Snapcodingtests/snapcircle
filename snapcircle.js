@@ -163,7 +163,6 @@ async function compressImageToBase64(file) {
         const reader = new FileReader();
         reader.onload = function(e) {
             const img = new Image();
-            img.crossOrigin = "anonymous"; // Handle CORS
             
             img.onload = function() {
                 try {
@@ -171,8 +170,9 @@ async function compressImageToBase64(file) {
                     let width = img.width;
                     let height = img.height;
 
-                    const maxWidth = 1080;
-                    const maxHeight = 1080;
+                    // SMALLER max dimensions for better compression
+                    const maxWidth = 800;
+                    const maxHeight = 800;
 
                     if (width > height) {
                         if (width > maxWidth) {
@@ -189,31 +189,25 @@ async function compressImageToBase64(file) {
                     canvas.width = width;
                     canvas.height = height;
 
-                    const ctx = canvas.getContext('2d', { willReadFrequently: false });
-                    
-                    // Fill with white background first (prevents transparency issues)
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillRect(0, 0, width, height);
+                    const ctx = canvas.getContext('2d');
                     
                     // Draw the image
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    // Convert to compressed base64
-                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    // Convert to compressed base64 with LOWER quality (0.5 instead of 0.7)
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.5);
                     
                     console.log('Image compressed successfully, size:', compressedDataUrl.length);
                     resolve(compressedDataUrl);
                 } catch (error) {
                     console.error('Canvas error:', error);
-                    // Fallback: return original base64
-                    resolve(e.target.result);
+                    reject(error);
                 }
             };
             
             img.onerror = function(error) {
                 console.error('Image load error:', error);
-                // Fallback: return original base64
-                resolve(e.target.result);
+                reject(error);
             };
             
             img.src = e.target.result;
@@ -254,8 +248,8 @@ async function createPost() {
 
         if (isVideo) {
             // For videos, convert directly to base64 (with size limit)
-            if (selectedFile.size > 10 * 1024 * 1024) { // 10MB limit for videos
-                alert('Video is too large. Maximum size is 10MB for base64 storage.');
+            if (selectedFile.size > 5 * 1024 * 1024) { // 5MB limit for videos
+                alert('Video is too large. Maximum size is 5MB.');
                 postBtn.textContent = 'Share Post';
                 postBtn.disabled = false;
                 return;
@@ -271,22 +265,11 @@ async function createPost() {
                 reader.readAsDataURL(selectedFile);
             });
         } else {
-            // Convert images directly to base64 WITHOUT compression (testing)
-            postBtn.textContent = 'Converting image...';
+            // Compress images MORE aggressively for base64
+            postBtn.textContent = 'Compressing image...';
             console.log('Converting image to base64...');
-            mediaData = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    console.log('Image converted successfully!');
-                    console.log('Data URL starts with:', e.target.result.substring(0, 50));
-                    console.log('Data URL length:', e.target.result.length);
-                    resolve(e.target.result);
-                };
-                reader.onerror = (e) => {
-                    console.error('FileReader error:', e);
-                };
-                reader.readAsDataURL(selectedFile);
-            });
+            mediaData = await compressImageToBase64(selectedFile);
+            console.log('Final compressed image size:', mediaData.length);
         }
 
         // Create post object
