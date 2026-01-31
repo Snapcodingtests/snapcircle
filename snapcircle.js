@@ -104,12 +104,14 @@ async function initializeApp() {
     setupFileUpload();
     setupScrollButton();
     setupKonamiCode();
+    setupTrendingTopics();
     
     if (isFirebaseInitialized) {
         await loadUserData();
         await loadPosts();
         updateBadgeDisplay();
         updateStatsDisplay();
+        loadSuggestedUsers();
     }
 }
 
@@ -883,18 +885,27 @@ async function viewProfile(userId) {
         const postsSnapshot = await database.ref('posts').orderByChild('userId').equalTo(userId).once('value');
         const posts = [];
         let totalReactions = 0;
+        let usernameFromPost = '';
+        let avatarColorFromPost = 'default';
         
         postsSnapshot.forEach(child => {
             const post = child.val();
             posts.push(post);
             totalReactions += post.reactions ? Object.keys(post.reactions).length : 0;
+            // Get username and color from their posts if not in users table
+            if (!usernameFromPost && post.username) {
+                usernameFromPost = post.username;
+            }
+            if (post.avatarColor) {
+                avatarColorFromPost = post.avatarColor;
+            }
         });
         
-        const username = userData.username || 'User';
+        const username = userData.username || usernameFromPost || 'User';
         const bio = userData.bio || '';
         const streak = userData.streak || 0;
         const badges = userData.badges || [];
-        const avatarColor = userData.avatarColor || 'default';
+        const avatarColor = userData.avatarColor || avatarColorFromPost;
         
         document.getElementById('profileUsername').textContent = username;
         document.getElementById('profileBio').textContent = bio;
@@ -973,6 +984,89 @@ function setupScrollButton() {
 
 function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ========================================
+// SUGGESTED USERS & TRENDING
+// ========================================
+async function loadSuggestedUsers() {
+    try {
+        const usersSnapshot = await database.ref('users').limitToFirst(10).once('value');
+        const postsSnapshot = await database.ref('posts').limitToLast(100).once('value');
+        
+        const userStats = {};
+        
+        // Calculate user activity
+        postsSnapshot.forEach(postSnap => {
+            const post = postSnap.val();
+            if (post.userId !== currentUserId) {
+                if (!userStats[post.userId]) {
+                    userStats[post.userId] = {
+                        userId: post.userId,
+                        username: post.username,
+                        avatarColor: post.avatarColor || 'default',
+                        postCount: 0,
+                        reactionCount: 0
+                    };
+                }
+                userStats[post.userId].postCount++;
+                userStats[post.userId].reactionCount += post.reactions ? Object.keys(post.reactions).length : 0;
+            }
+        });
+        
+        // Sort by most active
+        const topUsers = Object.values(userStats)
+            .sort((a, b) => (b.postCount + b.reactionCount) - (a.postCount + a.reactionCount))
+            .slice(0, 5);
+        
+        const suggestionsList = document.querySelector('.suggestions-list');
+        suggestionsList.innerHTML = '';
+        
+        topUsers.forEach(user => {
+            const avatarGradient = AVATAR_COLORS[user.avatarColor] || AVATAR_COLORS.default;
+            const li = document.createElement('li');
+            li.className = 'suggestion-item';
+            li.onclick = () => viewProfile(user.userId);
+            li.innerHTML = `
+                <div class="suggestion-avatar" style="background: ${avatarGradient}">
+                    ${user.username.charAt(0).toUpperCase()}
+                </div>
+                <div class="suggestion-info">
+                    <div class="suggestion-name">${user.username}</div>
+                    <div class="suggestion-meta">${user.postCount} posts · ${user.reactionCount} reactions</div>
+                </div>
+            `;
+            suggestionsList.appendChild(li);
+        });
+        
+        // Add default if no users found
+        if (topUsers.length === 0) {
+            suggestionsList.innerHTML = `
+                <li class="suggestion-item">
+                    <div class="suggestion-avatar">S</div>
+                    <div class="suggestion-info">
+                        <div class="suggestion-name">SnapCircle</div>
+                        <div class="suggestion-meta">Official Account</div>
+                    </div>
+                </li>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading suggested users:', error);
+    }
+}
+
+function setupTrendingTopics() {
+    const trendingItems = document.querySelectorAll('.trending-item');
+    trendingItems.forEach(item => {
+        item.addEventListener('click', function() {
+            const tag = this.querySelector('.trending-tag').textContent;
+            const searchInput = document.getElementById('searchInput');
+            searchInput.value = tag;
+            searchPosts(tag);
+            searchInput.scrollIntoView({ behavior: 'smooth' });
+        });
+    });
 }
 
 // ========================================
