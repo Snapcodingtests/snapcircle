@@ -6,7 +6,7 @@ const CONFIG = {
     MAX_CAPTION_LENGTH: 500,
     MAX_USERNAME_LENGTH: 30,
     MAX_BIO_LENGTH: 150,
-    POSTS_PER_PAGE: 10,
+    POSTS_PER_PAGE: 20, // Load more posts at once
     IMAGE_QUALITY: 0.8,
     MAX_IMAGE_DIMENSION: 1920,
     DEBOUNCE_DELAY: 300,
@@ -61,7 +61,7 @@ const AVATAR_COLORS = {
 // FIREBASE CONFIGURATION
 // ========================================
 const firebaseConfig = {
-    apiKey: "E",
+    apiKey: "E", // GitHub secret variable
     authDomain: "snapcircle-d4955.firebaseapp.com",
     databaseURL: "https://snapcircle-d4955-default-rtdb.europe-west1.firebasedatabase.app",
     projectId: "snapcircle-d4955",
@@ -82,8 +82,6 @@ let userBadges = [];
 let selectedAvatarColor = localStorage.getItem(STORAGE_KEYS.AVATAR_COLOR) || 'default';
 let currentFile = null;
 let postsListener = null;
-let lastPostId = null;
-let isLoadingPosts = false;
 
 // ========================================
 // UTILITY FUNCTIONS
@@ -220,7 +218,7 @@ async function initializeApp() {
     localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
     localStorage.setItem(STORAGE_KEYS.USER_ID, currentUserId);
     
-    // Initialize UI
+    // Initialize UI - these are fast and synchronous
     updateUsernameDisplay();
     loadTheme();
     updateStreak();
@@ -232,11 +230,19 @@ async function initializeApp() {
     
     // Load data if Firebase is initialized
     if (isFirebaseInitialized) {
-        await loadUserData();
-        await loadPostsWithPagination();
-        updateBadgeDisplay();
-        updateStatsDisplay();
+        // Load posts immediately without waiting
+        loadPosts();
+        
+        // Load user data in background
+        loadUserData().then(() => {
+            updateBadgeDisplay();
+            updateStatsDisplay();
+        });
+        
+        // Load suggested users in background
         loadSuggestedUsers();
+        
+        // Setup realtime listeners last
         setupRealtimeListeners();
     }
 }
@@ -422,69 +428,79 @@ async function checkBadges() {
     if (!isFirebaseInitialized) return;
     
     try {
-        // Get user's posts
+        // Only check if we don't have all badges yet
+        if (userBadges.length >= Object.keys(BADGES).length) return;
+        
+        // Get user's posts count from a single query
         const postsSnapshot = await database.ref('posts')
             .orderByChild('userId')
             .equalTo(currentUserId)
             .once('value');
         
-        const posts = [];
+        let postCount = 0;
         let totalReactions = 0;
         
         postsSnapshot.forEach(snap => {
+            postCount++;
             const post = snap.val();
-            posts.push(post);
             if (post.reactions) {
                 totalReactions += Object.keys(post.reactions).length;
             }
         });
         
-        const postCount = posts.length;
         const newBadges = [...userBadges];
+        let badgesEarned = false;
         
         // Check post-based badges
         if (postCount >= 1 && !newBadges.includes('FIRST_POST')) {
             newBadges.push('FIRST_POST');
             showNotification('✨ You earned the First Post badge!');
+            badgesEarned = true;
         }
         if (postCount >= 10 && !newBadges.includes('ACTIVE_USER')) {
             newBadges.push('ACTIVE_USER');
             showNotification('🔥 You earned the Active User badge!');
+            badgesEarned = true;
         }
         if (postCount >= 50 && !newBadges.includes('SUPER_CREATOR')) {
             newBadges.push('SUPER_CREATOR');
             showNotification('💎 You earned the Super Creator badge!');
+            badgesEarned = true;
         }
         
         // Check reaction-based badges
         if (totalReactions >= 100 && !newBadges.includes('INFLUENCER')) {
             newBadges.push('INFLUENCER');
             showNotification('⭐ You earned the Influencer badge!');
+            badgesEarned = true;
         }
         if (totalReactions >= 500 && !newBadges.includes('POPULAR')) {
             newBadges.push('POPULAR');
             showNotification('🌟 You earned the Popular badge!');
+            badgesEarned = true;
         }
         
         // Check streak badges
         if (currentStreak >= 7 && !newBadges.includes('WEEK_STREAK')) {
             newBadges.push('WEEK_STREAK');
             showNotification('🎯 You earned the Dedicated badge!');
+            badgesEarned = true;
         }
         if (currentStreak >= 30 && !newBadges.includes('MONTH_STREAK')) {
             newBadges.push('MONTH_STREAK');
             showNotification('👑 You earned the Loyal badge!');
+            badgesEarned = true;
         }
         
-        // Update if badges changed
-        if (newBadges.length > userBadges.length) {
+        // Update only if badges changed
+        if (badgesEarned) {
             userBadges = newBadges;
             await database.ref('users/' + currentUserId + '/badges').set(userBadges);
             updateBadgeDisplay();
             updateStatsDisplay();
         }
     } catch (error) {
-        handleError(error, 'checkBadges');
+        console.error('Error checking badges:', error);
     }
 }
 
@@ -745,9 +761,9 @@ async function createPost() {
         
         showNotification('Post created successfully!');
         
-        // Check for badges
-        await checkBadges();
-        await updateStatsDisplay();
+        // Check for badges in background (don't await)
+        checkBadges();
+        updateStatsDisplay();
         
     } catch (error) {
         handleError(error, 'createPost');
@@ -767,70 +783,46 @@ function fileToBase64(file) {
 }
 
 // ========================================
-// POST DISPLAY & PAGINATION
+// POST DISPLAY - OPTIMIZED
 // ========================================
-async function loadPostsWithPagination() {
-    if (!isFirebaseInitialized || isLoadingPosts) return;
+async function loadPosts() {
+    if (!isFirebaseInitialized) return;
     
-    isLoadingPosts = true;
     const feed = document.getElementById('feed');
     
-    // Show skeleton loaders
-    showSkeletonLoaders(3);
-    
     try {
-        let query = database.ref('posts')
+        // Load posts - limit to last 50 for performance
+        const snapshot = await database.ref('posts')
             .orderByChild('timestamp')
-            .limitToLast(CONFIG.POSTS_PER_PAGE);
+            .limitToLast(50)
+            .once('value');
         
-        if (lastPostId) {
-            // Load more posts
-            query = query.endAt(lastPostId);
-        }
-        
-        const snapshot = await query.once('value');
         const posts = [];
-        
         snapshot.forEach(snap => {
             posts.push({ id: snap.key, ...snap.val() });
         });
         
-        // Remove skeleton loaders
-        feed.querySelectorAll('.skeleton-post').forEach(el => el.remove());
+        feed.innerHTML = '';
         
         if (posts.length === 0) {
-            if (!lastPostId) {
-                // No posts at all
-                feed.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">🔵</div>
-                        <h3>Welcome to SnapCircle!</h3>
-                        <p>Be the first to share something amazing!</p>
-                    </div>
-                `;
-            }
+            feed.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔵</div>
+                    <h3>Welcome to SnapCircle!</h3>
+                    <p>Be the first to share something amazing!</p>
+                </div>
+            `;
         } else {
-            // Remove empty state if it exists
-            const emptyState = feed.querySelector('.empty-state');
-            if (emptyState) emptyState.remove();
-            
             // Sort posts by timestamp (newest first)
             posts.sort((a, b) => b.timestamp - a.timestamp);
             
             posts.forEach(post => {
-                if (post.id !== lastPostId) {
-                    const postElement = createPostElement(post);
-                    feed.appendChild(postElement);
-                }
+                const postElement = createPostElement(post);
+                feed.appendChild(postElement);
             });
-            
-            // Update last post ID for pagination
-            if (posts.length > 0) {
-                lastPostId = posts[0].id;
-            }
         }
     } catch (error) {
-        handleError(error, 'loadPostsWithPagination');
+        handleError(error, 'loadPosts');
         feed.innerHTML = `
             <div class="error-message">
                 <span class="error-icon">⚠️</span>
@@ -840,49 +832,23 @@ async function loadPostsWithPagination() {
                 </div>
             </div>
         `;
-    } finally {
-        isLoadingPosts = false;
-    }
-}
-
-function showSkeletonLoaders(count) {
-    const feed = document.getElementById('feed');
-    const emptyState = feed.querySelector('.empty-state');
-    if (emptyState) emptyState.remove();
-    
-    for (let i = 0; i < count; i++) {
-        const skeleton = document.createElement('div');
-        skeleton.className = 'skeleton-post';
-        skeleton.innerHTML = `
-            <div class="skeleton-header">
-                <div class="skeleton-avatar"></div>
-                <div class="skeleton-text">
-                    <div class="skeleton-line short"></div>
-                    <div class="skeleton-line" style="width: 40%;"></div>
-                </div>
-            </div>
-            <div class="skeleton-media"></div>
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line short"></div>
-        `;
-        feed.appendChild(skeleton);
     }
 }
 
 function setupRealtimeListeners() {
     if (!isFirebaseInitialized) return;
     
-    // Listen for new posts
+    const startTime = Date.now();
+    
+    // Listen for new posts only (posts created after page load)
     postsListener = database.ref('posts')
         .orderByChild('timestamp')
-        .startAt(Date.now())
+        .startAt(startTime)
         .on('child_added', (snapshot) => {
             const post = { id: snapshot.key, ...snapshot.val() };
             
-            // Don't add if it's our own post (already added) or if it's an old post
-            if (post.userId === currentUserId || post.timestamp < Date.now() - 10000) {
-                return;
-            }
+            // Only add posts created after initialization
+            if (post.timestamp < startTime) return;
             
             const feed = document.getElementById('feed');
             const emptyState = feed.querySelector('.empty-state');
@@ -1014,7 +980,7 @@ async function toggleReaction(postId, reactionName) {
         
         // Refresh post display
         await refreshPost(postId);
-        await updateStatsDisplay();
+        updateStatsDisplay(); // Don't await, run in background
     } catch (error) {
         handleError(error, 'toggleReaction');
     }
@@ -1072,8 +1038,8 @@ async function deletePost(postId) {
         }
         
         showNotification('Post deleted successfully');
-        await updateStatsDisplay();
-        await checkBadges();
+        updateStatsDisplay();
+        checkBadges();
     } catch (error) {
         handleError(error, 'deletePost');
     }
@@ -1443,10 +1409,26 @@ function activatePartyMode() {
 }
 
 // ========================================
-// CONTACT FORM (Placeholder)
+// CONTACT FORM
 // ========================================
 function openContactForm() {
-    showNotification('Contact form coming soon! Email us at: hello@snapcircle.com', 'info');
+    const message = prompt('Send us a message:');
+    if (!message) return;
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'https://formsubmit.co/ayoubnware1@gmail.com';
+    form.innerHTML = `
+        <input type="hidden" name="_subject" value="SnapCircle Contact">
+        <input type="hidden" name="From" value="${sanitizeInput(currentUsername)}">
+        <input type="hidden" name="User ID" value="${currentUserId}">
+        <input type="hidden" name="Message" value="${sanitizeInput(message)}">
+        <input type="hidden" name="_captcha" value="false">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+    
+    showNotification('Message sent!');
 }
 
 // ========================================
