@@ -1,7 +1,6 @@
 // ========================================
 // FIREBASE CONFIGURATION
 // ========================================
-// REPLACE THIS WITH YOUR FIREBASE CONFIG
 const firebaseConfig = {
   apiKey: "AIzaSyD8g1ogr4Hjs1jRBlmUACMQ-4huZqjAnm8",
   authDomain: "snapcircle-d4955.firebaseapp.com",
@@ -11,17 +10,15 @@ const firebaseConfig = {
   messagingSenderId: "12069426076",
   appId: "1:12069426076:web:24496f14b46b2506606e59"
 };
-
 // Initialize Firebase
-let app, database, storage;
+let app, database;
 let isFirebaseInitialized = false;
 
 try {
     app = firebase.initializeApp(firebaseConfig);
     database = firebase.database();
-    storage = firebase.storage();
     isFirebaseInitialized = true;
-    console.log('Firebase initialized successfully');
+    console.log('Firebase initialized successfully (using base64 for media)');
 } catch (error) {
     console.error('Firebase initialization error:', error);
     alert('Firebase not configured. Please add your Firebase config to the JavaScript file.');
@@ -158,9 +155,9 @@ function removePreview() {
 }
 
 // ========================================
-// IMAGE COMPRESSION
+// IMAGE COMPRESSION TO BASE64
 // ========================================
-async function compressImage(file) {
+async function compressImageToBase64(file) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = function(e) {
@@ -191,9 +188,9 @@ async function compressImage(file) {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                canvas.toBlob((blob) => {
-                    resolve(blob);
-                }, 'image/jpeg', 0.7);
+                // Convert to compressed base64
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                resolve(compressedDataUrl);
             };
             img.src = e.target.result;
         };
@@ -219,34 +216,42 @@ async function createPost() {
     const postBtn = document.getElementById('postBtn');
     
     postBtn.disabled = true;
-    postBtn.textContent = 'Uploading...';
+    postBtn.textContent = 'Processing...';
 
     try {
         const isVideo = selectedFile.type.startsWith('video/');
-        let fileToUpload = selectedFile;
+        let mediaData;
 
-        // Compress images
-        if (!isVideo) {
-            postBtn.textContent = 'Compressing...';
-            fileToUpload = await compressImage(selectedFile);
+        if (isVideo) {
+            // For videos, convert directly to base64 (with size limit)
+            if (selectedFile.size > 10 * 1024 * 1024) { // 10MB limit for videos
+                alert('Video is too large. Maximum size is 10MB for base64 storage.');
+                postBtn.textContent = 'Share Post';
+                postBtn.disabled = false;
+                return;
+            }
+            
+            postBtn.textContent = 'Converting video...';
+            mediaData = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.readAsDataURL(selectedFile);
+            });
+        } else {
+            // Compress images to base64
+            postBtn.textContent = 'Compressing image...';
+            mediaData = await compressImageToBase64(selectedFile);
         }
 
-        // Upload to Firebase Storage
-        postBtn.textContent = 'Uploading...';
-        const timestamp = Date.now();
-        const fileName = `${currentUserId}_${timestamp}_${selectedFile.name}`;
-        const storageRef = storage.ref(`posts/${fileName}`);
-        
-        const uploadTask = await storageRef.put(fileToUpload);
-        const mediaUrl = await uploadTask.ref.getDownloadURL();
-
         // Create post object
+        postBtn.textContent = 'Saving...';
+        const timestamp = Date.now();
         const post = {
             id: 'post_' + timestamp,
             username: currentUsername,
             userId: currentUserId,
             caption: caption,
-            mediaUrl: mediaUrl,
+            mediaUrl: mediaData,  // base64 string
             mediaType: isVideo ? 'video' : 'image',
             reactions: {},
             comments: [],
@@ -272,8 +277,7 @@ async function createPost() {
         postBtn.textContent = 'Share Post';
         postBtn.disabled = false;
     }
-}
-
+        }
 // ========================================
 // LOAD POSTS FROM FIREBASE
 // ========================================
