@@ -1259,6 +1259,49 @@
             box-shadow: var(--shadow-lg);
         }
 
+        .login-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .login-tab {
+            flex: 1;
+            padding: 12px 16px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: var(--text-secondary);
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition-smooth);
+        }
+
+        .login-tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        .login-tab:hover {
+            color: var(--text-primary);
+        }
+
+        .login-section {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         /* Profile Modal */
         .profile-modal .modal-content {
             max-width: 600px;
@@ -1887,7 +1930,7 @@
                 <span aria-hidden="true">🔥</span>
                 <span id="streakCount" aria-label="Streak count">0</span>
             </div>
-            <div class="username-display" onclick="viewProfile(currentUserId)" role="button" tabindex="0">
+            <div class="username-display" onclick="viewMyProfile()" role="button" tabindex="0">
                 <div class="user-avatar-small" id="headerAvatar" aria-hidden="true">
                     <span>U</span>
                     <span class="badge-mini" id="headerBadge"></span>
@@ -1895,6 +1938,9 @@
                 <span class="username-text" id="currentUsername">User123</span>
             </div>
             <button class="btn-primary" onclick="openUsernameModal()">Edit Profile</button>
+            <button class="icon-btn" onclick="openLoginModal()" title="Login/Register" aria-label="Login or Register">
+                <span aria-hidden="true">🔐</span>
+            </button>
             <button class="icon-btn" onclick="openContactForm()" title="Contact us" aria-label="Contact us">
                 <span aria-hidden="true">✉️</span>
             </button>
@@ -2091,6 +2137,55 @@
             <div class="modal-buttons">
                 <button class="modal-cancel" onclick="closeUsernameModal()">Cancel</button>
                 <button class="modal-save" onclick="saveUsername()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login/Recovery Modal -->
+    <div class="modal" id="loginModal" role="dialog" aria-labelledby="loginHeading" aria-modal="true">
+        <div class="modal-content">
+            <h3 id="loginHeading"><span aria-hidden="true">🔐</span> Login / Register</h3>
+            
+            <div class="login-tabs">
+                <button class="login-tab active" onclick="switchLoginTab('register')">Register New Account</button>
+                <button class="login-tab" onclick="switchLoginTab('login')">Login with Code</button>
+            </div>
+
+            <div id="registerSection" class="login-section">
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Save your unique code to access your account from any device!
+                </p>
+                <div class="info-box" style="background: var(--bg-tertiary); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <p style="margin-bottom: 8px; font-weight: 600;">Your Unique Account Code:</p>
+                    <div class="user-code" id="registerCodeDisplay" style="font-family: 'Space Mono', monospace; font-size: 24px; font-weight: 700; letter-spacing: 2px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; text-align: center; margin: 12px 0;">${currentUserCode}</div>
+                    <p style="font-size: 14px; color: var(--text-muted); margin-top: 8px;">⚠️ Save this code! You'll need it to login from other devices.</p>
+                </div>
+                <button class="modal-save" onclick="copyAccountCode()" style="width: 100%; margin-bottom: 12px;">
+                    📋 Copy Code
+                </button>
+                <button class="modal-cancel" onclick="closeLoginModal()" style="width: 100%;">
+                    Close
+                </button>
+            </div>
+
+            <div id="loginSection" class="login-section" style="display: none;">
+                <p style="color: var(--text-secondary); margin-bottom: 16px;">
+                    Enter your 8-character account code to restore your account.
+                </p>
+                <div class="profile-edit-section">
+                    <label for="loginCodeInput">Account Code</label>
+                    <input 
+                        type="text" 
+                        id="loginCodeInput" 
+                        placeholder="XXXXXXXX" 
+                        maxlength="8"
+                        style="text-transform: uppercase; font-family: 'Space Mono', monospace; letter-spacing: 2px; font-size: 18px;"
+                    >
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-cancel" onclick="closeLoginModal()">Cancel</button>
+                    <button class="modal-save" onclick="loginWithCode()">Login</button>
+                </div>
             </div>
         </div>
     </div>

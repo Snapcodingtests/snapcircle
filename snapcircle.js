@@ -95,34 +95,10 @@ let postsListener = null;
 // ========================================
 
 /**
- * Generate unique user ID with browser fingerprint for better persistence
+ * Generate unique user ID - simple and stable
  */
 function generateUserId() {
-    // Try to create a more persistent ID based on browser characteristics
-    const nav = navigator;
-    const screen = window.screen;
-    
-    // Combine various browser properties for a fingerprint
-    const fingerprint = [
-        nav.userAgent,
-        nav.language,
-        screen.colorDepth,
-        screen.width + 'x' + screen.height,
-        new Date().getTimezoneOffset(),
-        nav.hardwareConcurrency || 0,
-        nav.deviceMemory || 0
-    ].join('|');
-    
-    // Create a hash from the fingerprint
-    let hash = 0;
-    for (let i = 0; i < fingerprint.length; i++) {
-        const char = fingerprint.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32bit integer
-    }
-    
-    // Create user ID with timestamp and hash
-    return 'user_' + Math.abs(hash).toString(36) + '_' + Date.now().toString(36);
+    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
 /**
@@ -1551,6 +1527,10 @@ async function viewProfile(userId) {
     }
 }
 
+function viewMyProfile() {
+    viewProfile(currentUserId);
+}
+
 function closeProfileModal() {
     document.getElementById('profileModal').classList.remove('show');
 }
@@ -1750,6 +1730,150 @@ function activatePartyMode() {
 // ========================================
 // EMAIL CONNECTION
 // ========================================
+function openLoginModal() {
+    const modal = document.getElementById('loginModal');
+    modal.classList.add('show');
+    
+    // Update the code display
+    const codeDisplay = document.getElementById('registerCodeDisplay');
+    if (codeDisplay) {
+        codeDisplay.textContent = currentUserCode;
+    }
+    
+    // Default to register tab
+    switchLoginTab('register');
+}
+
+function closeLoginModal() {
+    const modal = document.getElementById('loginModal');
+    modal.classList.remove('show');
+}
+
+function switchLoginTab(tab) {
+    const registerSection = document.getElementById('registerSection');
+    const loginSection = document.getElementById('loginSection');
+    const tabs = document.querySelectorAll('.login-tab');
+    
+    tabs.forEach(t => t.classList.remove('active'));
+    
+    if (tab === 'register') {
+        registerSection.style.display = 'block';
+        loginSection.style.display = 'none';
+        tabs[0].classList.add('active');
+    } else {
+        registerSection.style.display = 'none';
+        loginSection.style.display = 'block';
+        tabs[1].classList.add('active');
+    }
+}
+
+function copyAccountCode() {
+    const code = currentUserCode;
+    
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(() => {
+            showNotification('✅ Account code copied to clipboard!');
+        }).catch(() => {
+            fallbackCopyCode(code);
+        });
+    } else {
+        fallbackCopyCode(code);
+    }
+}
+
+function fallbackCopyCode(code) {
+    const textArea = document.createElement('textarea');
+    textArea.value = code;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        showNotification('✅ Account code copied to clipboard!');
+    } catch (err) {
+        showNotification('Code: ' + code + ' (Please copy manually)', 'info');
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+async function loginWithCode() {
+    const codeInput = document.getElementById('loginCodeInput');
+    const code = codeInput.value.trim().toUpperCase();
+    
+    if (!code || code.length !== 8) {
+        showNotification('Please enter a valid 8-character code', 'error');
+        return;
+    }
+    
+    if (!isFirebaseInitialized) {
+        showNotification('Please wait for connection...', 'error');
+        return;
+    }
+    
+    try {
+        // Search for user with this code
+        const snapshot = await database.ref('users')
+            .orderByChild('userCode')
+            .equalTo(code)
+            .once('value');
+        
+        if (!snapshot.exists()) {
+            showNotification('Account code not found. Please check and try again.', 'error');
+            return;
+        }
+        
+        // Get the user data
+        let foundUserId = null;
+        let foundUserData = null;
+        
+        snapshot.forEach(childSnapshot => {
+            foundUserId = childSnapshot.key;
+            foundUserData = childSnapshot.val();
+        });
+        
+        if (!foundUserId) {
+            showNotification('Account not found', 'error');
+            return;
+        }
+        
+        // Update local storage with the recovered account
+        currentUserId = foundUserId;
+        currentUsername = foundUserData.username || currentUsername;
+        currentUserCode = code;
+        userEmail = foundUserData.email || '';
+        isConnected = foundUserData.connected || false;
+        selectedAvatarColor = foundUserData.avatarColor || 'default';
+        
+        localStorage.setItem(STORAGE_KEYS.USER_ID, currentUserId);
+        localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
+        localStorage.setItem(STORAGE_KEYS.USER_CODE, currentUserCode);
+        localStorage.setItem(STORAGE_KEYS.EMAIL, userEmail);
+        localStorage.setItem(STORAGE_KEYS.CONNECTED, isConnected);
+        localStorage.setItem(STORAGE_KEYS.AVATAR_COLOR, selectedAvatarColor);
+        
+        // Update last active
+        await database.ref(`users/${currentUserId}`).update({
+            lastActive: Date.now()
+        });
+        
+        // Reload the app with the recovered account
+        showNotification('✅ Account restored successfully!');
+        closeLoginModal();
+        
+        // Refresh the page to load the account data
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        showNotification('Failed to login. Please try again.', 'error');
+    }
+}
+
 function openConnectModal() {
     let modal = document.getElementById('connectModal');
     if (!modal) {
