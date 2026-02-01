@@ -95,10 +95,34 @@ let postsListener = null;
 // ========================================
 
 /**
- * Generate unique user ID
+ * Generate unique user ID with browser fingerprint for better persistence
  */
 function generateUserId() {
-    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    // Try to create a more persistent ID based on browser characteristics
+    const nav = navigator;
+    const screen = window.screen;
+    
+    // Combine various browser properties for a fingerprint
+    const fingerprint = [
+        nav.userAgent,
+        nav.language,
+        screen.colorDepth,
+        screen.width + 'x' + screen.height,
+        new Date().getTimezoneOffset(),
+        nav.hardwareConcurrency || 0,
+        nav.deviceMemory || 0
+    ].join('|');
+    
+    // Create a hash from the fingerprint
+    let hash = 0;
+    for (let i = 0; i < fingerprint.length; i++) {
+        const char = fingerprint.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    // Create user ID with timestamp and hash
+    return 'user_' + Math.abs(hash).toString(36) + '_' + Date.now().toString(36);
 }
 
 /**
@@ -865,8 +889,8 @@ async function createPost() {
     postBtn.textContent = 'Posting...';
     
     try {
-        let mediaUrl = null;
-        let mediaType = null;
+        let mediaUrl = '';
+        let mediaType = 'text';
         
         if (currentFile) {
             // Convert file to base64
@@ -878,7 +902,7 @@ async function createPost() {
             userId: currentUserId,
             username: currentUsername,
             avatarColor: selectedAvatarColor,
-            caption: sanitizeInput(caption),
+            caption: sanitizeInput(caption) || '',
             mediaUrl: mediaUrl,
             mediaType: mediaType,
             timestamp: Date.now(),
@@ -1403,6 +1427,13 @@ async function viewProfile(userId) {
     if (!isFirebaseInitialized || !userId) return;
     
     const modal = document.getElementById('profileModal');
+    const profilePostsEl = document.getElementById('profilePosts');
+    
+    // Show modal with loading state immediately
+    modal.classList.add('show');
+    if (profilePostsEl) {
+        profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1; padding: 40px 20px;">Loading profile...</p>';
+    }
     
     try {
         // Get user data
@@ -1454,7 +1485,6 @@ async function viewProfile(userId) {
         const profileStreakEl = document.getElementById('profileStreakDisplay');
         const profileAvatarEl = document.getElementById('profileAvatar');
         const profileBadgesEl = document.getElementById('profileBadgesDisplay');
-        const profilePostsEl = document.getElementById('profilePosts');
         
         if (profileUsernameEl) profileUsernameEl.textContent = username;
         if (profileBioEl) {
@@ -1497,7 +1527,7 @@ async function viewProfile(userId) {
                     }
                 };
                 
-                if (post.mediaUrl) {
+                if (post.mediaUrl && post.mediaType !== 'text') {
                     if (post.mediaType === 'video') {
                         thumb.innerHTML = `<video src="${post.mediaUrl}" muted></video>`;
                     } else {
@@ -1514,8 +1544,6 @@ async function viewProfile(userId) {
                 profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No posts yet</p>';
             }
         }
-        
-        modal.classList.add('show');
         
     } catch (error) {
         console.error('Error loading profile:', error);
@@ -1692,19 +1720,29 @@ function setupKonamiCode() {
 
 function activatePartyMode() {
     showNotification('🎉 PARTY MODE ACTIVATED! 🎉');
-    document.body.style.animation = 'rainbow 3s infinite';
     
+    // Remove any existing party mode style
+    const existingStyle = document.getElementById('party-mode-style');
+    if (existingStyle) existingStyle.remove();
+    
+    // Add rainbow animation
     const style = document.createElement('style');
+    style.id = 'party-mode-style';
     style.textContent = `
         @keyframes rainbow {
             0% { filter: hue-rotate(0deg); }
             100% { filter: hue-rotate(360deg); }
         }
+        body.party-mode {
+            animation: rainbow 3s linear infinite !important;
+        }
     `;
     document.head.appendChild(style);
     
+    document.body.classList.add('party-mode');
+    
     setTimeout(() => {
-        document.body.style.animation = '';
+        document.body.classList.remove('party-mode');
         style.remove();
     }, 10000);
 }
@@ -1713,45 +1751,59 @@ function activatePartyMode() {
 // EMAIL CONNECTION
 // ========================================
 function openConnectModal() {
-    const modal = document.getElementById('connectModal');
+    let modal = document.getElementById('connectModal');
     if (!modal) {
-        createConnectModal();
+        modal = createConnectModal();
     }
-    document.getElementById('connectModal').classList.add('active');
-    document.getElementById('connectEmail').value = userEmail || '';
-    document.getElementById('userCodeDisplay').textContent = currentUserCode;
+    modal.classList.add('show');
+    const emailInput = document.getElementById('connectEmail');
+    if (emailInput) {
+        emailInput.value = userEmail || '';
+    }
+    const userCodeDisplay = document.getElementById('userCodeDisplay');
+    if (userCodeDisplay) {
+        userCodeDisplay.textContent = currentUserCode;
+    }
 }
 
 function createConnectModal() {
     const modalHTML = `
         <div class="modal" id="connectModal">
             <div class="modal-content">
-                <h2>🔐 Connect Your Account</h2>
-                <p class="modal-description">Protect your account from auto-deletion after 30 days of inactivity.</p>
+                <h2 style="margin: 0 0 12px; display: flex; align-items: center; gap: 12px;">
+                    🔐 Connect Your Account
+                </h2>
+                <p class="modal-description" style="margin-bottom: 24px; color: var(--text-secondary);">
+                    Protect your account from auto-deletion after 30 days of inactivity.
+                </p>
                 
-                <div class="info-box">
-                    <p><strong>Your Unique Code:</strong></p>
-                    <div class="user-code" id="userCodeDisplay">${currentUserCode}</div>
-                    <p class="info-note">Save this code! You'll need it to recover your account.</p>
+                <div class="info-box" style="background: var(--bg-tertiary); padding: 16px; border-radius: 12px; margin-bottom: 24px;">
+                    <p style="margin-bottom: 8px; font-weight: 600;"><strong>Your Unique Code:</strong></p>
+                    <div class="user-code" id="userCodeDisplay" style="font-family: 'Space Mono', monospace; font-size: 24px; font-weight: 700; letter-spacing: 2px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; text-align: center; margin: 12px 0;">${currentUserCode}</div>
+                    <p class="info-note" style="font-size: 14px; color: var(--text-muted); margin-top: 8px;">Save this code! You'll need it to recover your account.</p>
                 </div>
                 
-                <div class="form-group">
-                    <label for="connectEmail">Email Address</label>
-                    <input type="email" id="connectEmail" placeholder="your@email.com" required>
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label for="connectEmail" style="display: block; margin-bottom: 8px; font-weight: 500;">Email Address</label>
+                    <input type="email" id="connectEmail" placeholder="your@email.com" required style="width: 100%; padding: 12px; border: 2px solid var(--border-color); border-radius: 8px; font-size: 16px; background: var(--bg-secondary); color: var(--text-primary);">
                 </div>
                 
-                <div class="modal-buttons">
-                    <button class="btn-primary" onclick="connectAccount()">Connect Account</button>
-                    <button class="btn-secondary" onclick="closeConnectModal()">Maybe Later</button>
+                <div class="modal-buttons" style="display: flex; gap: 12px;">
+                    <button class="modal-cancel" onclick="closeConnectModal()" style="flex: 1; padding: 12px 24px; border: 2px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); border-radius: 8px; font-weight: 600; cursor: pointer;">Maybe Later</button>
+                    <button class="modal-save" onclick="connectAccount()" style="flex: 1; padding: 12px 24px; border: none; background: var(--gradient-accent); color: white; border-radius: 8px; font-weight: 600; cursor: pointer;">Connect Account</button>
                 </div>
             </div>
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', modalHTML);
+    return document.getElementById('connectModal');
 }
 
 function closeConnectModal() {
-    document.getElementById('connectModal').classList.remove('active');
+    const modal = document.getElementById('connectModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
 }
 
 async function connectAccount() {
