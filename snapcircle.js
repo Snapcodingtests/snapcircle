@@ -2041,24 +2041,47 @@ async function connectAccount() {
 // ========================================
 // CONTACT FORM
 // ========================================
-function openContactForm() {
+async function openContactForm() {
     const message = prompt('Send us a message:');
-    if (!message) return;
+    if (!message || message.trim().length === 0) return;
     
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'https://formsubmit.co/ayoubnware1@gmail.com';
-    form.innerHTML = `
-        <input type="hidden" name="_subject" value="SnapCircle Contact">
-        <input type="hidden" name="From" value="${sanitizeInput(currentUsername)}">
-        <input type="hidden" name="User ID" value="${currentUserId}">
-        <input type="hidden" name="Message" value="${sanitizeInput(message)}">
-        <input type="hidden" name="_captcha" value="false">
-    `;
-    document.body.appendChild(form);
-    form.submit();
+    if (!isFirebaseInitialized) {
+        showNotification('Cannot send message: Not connected to server', 'error');
+        return;
+    }
     
-    showNotification('Message sent!');
+    try {
+        // Store the message in Firebase
+        await database.ref('messages').push({
+            userId: currentUserId,
+            username: currentUsername,
+            message: sanitizeInput(message),
+            timestamp: Date.now(),
+            userEmail: userEmail || 'Not provided'
+        });
+        
+        showNotification('✅ Message sent successfully!');
+    } catch (error) {
+        console.error('Error sending message:', error);
+        
+        // Fallback: show the message details so user can copy it
+        const messageDetails = `
+Message from: ${currentUsername} (${currentUserId})
+${userEmail ? 'Email: ' + userEmail : ''}
+Message: ${message}
+
+You can send this manually to: ayoubnware1@gmail.com
+        `.trim();
+        
+        alert('Could not send message automatically. Here are the details:\n\n' + messageDetails);
+        
+        // Try to copy to clipboard
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(messageDetails).then(() => {
+                showNotification('Message details copied to clipboard');
+            });
+        }
+    }
 }
 
 // ========================================
