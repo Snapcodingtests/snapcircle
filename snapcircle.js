@@ -787,10 +787,10 @@ async function loadPosts() {
     const feed = document.getElementById('feed');
     
     try {
-        // Load posts - limit to last 50 for performance
+        // Load posts - limit to last 30 for performance  
         const snapshot = await database.ref('posts')
             .orderByChild('timestamp')
-            .limitToLast(50)
+            .limitToLast(30)
             .once('value');
         
         const posts = [];
@@ -812,10 +812,33 @@ async function loadPosts() {
             // Sort posts by timestamp (newest first)
             posts.sort((a, b) => b.timestamp - a.timestamp);
             
-            posts.forEach(post => {
-                const postElement = createPostElement(post);
-                feed.appendChild(postElement);
-            });
+            // Batch render for smooth performance
+            let index = 0;
+            const batchSize = 3; // Render 3 posts at a time
+            
+            function renderBatch() {
+                const end = Math.min(index + batchSize, posts.length);
+                const fragment = document.createDocumentFragment();
+                
+                for (let i = index; i < end; i++) {
+                    const postElement = createPostElement(posts[i]);
+                    fragment.appendChild(postElement);
+                }
+                
+                feed.appendChild(fragment);
+                index = end;
+                
+                if (index < posts.length) {
+                    // Use requestIdleCallback for better performance
+                    if ('requestIdleCallback' in window) {
+                        requestIdleCallback(renderBatch);
+                    } else {
+                        setTimeout(renderBatch, 16); // ~60fps
+                    }
+                }
+            }
+            
+            renderBatch();
         }
     } catch (error) {
         handleError(error, 'loadPosts');
@@ -933,6 +956,40 @@ function createPostElement(post) {
         <div class="post-reactions" role="group" aria-label="Reactions">
             ${reactionsHTML}
         </div>
+        <div class="post-comments">
+            <div class="comments-list" id="comments-${post.id}">
+                ${(() => {
+                    const comments = post.comments || [];
+                    const commentsArray = Array.isArray(comments) ? comments : Object.values(comments);
+                    const displayComments = commentsArray.slice(-3);
+                    
+                    return displayComments.map(comment => `
+                        <div class="comment">
+                            <span class="comment-username">${sanitizeInput(comment.username || 'User')}:</span>
+                            <span class="comment-text">${sanitizeInput(comment.text || '')}</span>
+                        </div>
+                    `).join('') + 
+                    (commentsArray.length > 3 ? `
+                        <div class="view-all-comments" onclick="viewAllComments('${post.id}')">
+                            View all ${commentsArray.length} comments
+                        </div>
+                    ` : '');
+                })()}
+            </div>
+            <div class="comment-input-wrapper">
+                <input 
+                    type="text" 
+                    class="comment-input" 
+                    placeholder="Add a comment..." 
+                    id="comment-input-${post.id}"
+                    maxlength="500"
+                    onkeypress="if(event.key === 'Enter') addComment('${post.id}')"
+                >
+                <button class="comment-btn" onclick="addComment('${post.id}')" aria-label="Post comment">
+                    ➤
+                </button>
+            </div>
+        </div>
         <div class="post-footer">
             <button class="share-btn" onclick="sharePost('${post.id}')" aria-label="Share post">
                 <span aria-hidden="true">🔗</span> Share
@@ -980,6 +1037,76 @@ async function toggleReaction(postId, reactionName) {
     } catch (error) {
         handleError(error, 'toggleReaction');
     }
+}
+
+async function refreshPost(postId) {
+    if (!isFirebaseInitialized) return;
+    
+    try {
+        const snapshot = await database.ref(`posts/${postId}`).once('value');
+        if (!snapshot.exists()) return;
+        
+        const post = { id: snapshot.key, ...snapshot.val() };
+        const postElement = document.querySelector(`[data-post-id="${postId}"]`);
+        
+        if (postElement) {
+            const newElement = createPostElement(post);
+            postElement.replaceWith(newElement);
+        }
+    } catch (error) {
+        console.error('Error refreshing post:', error);
+    }
+}
+
+// ========================================
+// COMMENTS
+// ========================================
+async function addComment(postId) {
+    const input = document.getElementById(`comment-input-${postId}`);
+    const text = input.value.trim();
+    
+    if (!text) return;
+    if (text.length > 500) {
+        showNotification('Comment is too long (max 500 characters)');
+        return;
+    }
+    
+    try {
+        const comment = {
+            userId: currentUserId,
+            username: currentUsername,
+            text: text,
+            timestamp: Date.now()
+        };
+        
+        await database.ref(`posts/${postId}/comments`).push(comment);
+        input.value = '';
+        
+        // Refresh the post to show new comment
+        await refreshPost(postId);
+    } catch (error) {
+        handleError(error, 'addComment');
+    }
+}
+
+function viewAllComments(postId) {
+    const post = document.querySelector(`[data-post-id="${postId}"]`);
+    const commentsContainer = post.querySelector('.comments-list');
+    
+    database.ref(`posts/${postId}`).once('value').then(snapshot => {
+        const postData = snapshot.val();
+        const comments = postData.comments || [];
+        
+        // Convert comments object to array if needed
+        const commentsArray = Array.isArray(comments) ? comments : Object.values(comments);
+        
+        commentsContainer.innerHTML = commentsArray.map(comment => `
+            <div class="comment">
+                <span class="comment-username">${sanitizeInput(comment.username)}:</span>
+                <span class="comment-text">${sanitizeInput(comment.text)}</span>
+            </div>
+        `).join('');
+    });
 }
 
 async function refreshPost(postId) {
