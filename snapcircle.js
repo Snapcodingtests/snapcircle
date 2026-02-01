@@ -196,7 +196,17 @@ function showNotification(message, type = 'success') {
  */
 function handleError(error, context = '') {
     console.error(`Error in ${context}:`, error);
-    showNotification(`Something went wrong. Please try again.`, 'error');
+    
+    // Show more specific error message
+    let errorMessage = 'Something went wrong. Please try again.';
+    
+    if (error.code === 'PERMISSION_DENIED') {
+        errorMessage = 'Permission denied. Please check Firebase rules.';
+    } else if (error.message) {
+        errorMessage = error.message;
+    }
+    
+    showNotification(errorMessage, 'error');
 }
 
 // ========================================
@@ -885,7 +895,11 @@ async function createPost() {
             reactions: {}
         };
         
+        console.log('Attempting to create post:', postData);
+        
         await database.ref('posts').push(postData);
+        
+        console.log('Post created successfully');
         
         // Update last post time
         localStorage.setItem(STORAGE_KEYS.LAST_POST_TIME, now.toString());
@@ -904,6 +918,9 @@ async function createPost() {
         }, 500);
         
     } catch (error) {
+        console.error('Full error object:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
         handleError(error, 'createPost');
     } finally {
         postBtn.disabled = false;
