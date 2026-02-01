@@ -1417,7 +1417,12 @@ const searchPosts = debounce(async function(query) {
 // PROFILE VIEW
 // ========================================
 async function viewProfile(userId) {
-    if (!isFirebaseInitialized || !userId) return;
+    console.log('viewProfile called with userId:', userId);
+    
+    if (!isFirebaseInitialized || !userId) {
+        console.error('Cannot view profile - Firebase not initialized or no userId');
+        return;
+    }
     
     const modal = document.getElementById('profileModal');
     const profilePostsEl = document.getElementById('profilePosts');
@@ -1429,15 +1434,20 @@ async function viewProfile(userId) {
     }
     
     try {
+        console.log('Fetching user data for:', userId);
         // Get user data
         const userSnapshot = await database.ref('users/' + userId).once('value');
         const userData = userSnapshot.val() || {};
+        console.log('User data retrieved:', userData);
         
+        console.log('Fetching posts for userId:', userId);
         // Get user posts
         const postsSnapshot = await database.ref('posts')
             .orderByChild('userId')
             .equalTo(userId)
             .once('value');
+        
+        console.log('Posts snapshot received');
         
         const posts = [];
         let totalReactions = 0;
@@ -1447,6 +1457,7 @@ async function viewProfile(userId) {
         postsSnapshot.forEach(snap => {
             const post = { id: snap.key, ...snap.val() };
             posts.push(post);
+            console.log('Found post:', post.id);
             
             if (post.reactions) {
                 Object.values(post.reactions).forEach(reactionType => {
@@ -1464,10 +1475,22 @@ async function viewProfile(userId) {
             }
         });
         
+        console.log('Total posts found:', posts.length);
+        
         const username = userData.username || usernameFromPost || 'User';
         const bio = userData.bio || '';
         const streak = userData.streak || 0;
-        const badges = userData.badges || [];
+        
+        // Handle badges - can be string or array
+        let badges = [];
+        if (userData.badges) {
+            if (typeof userData.badges === 'string') {
+                badges = userData.badges.split(',').filter(b => b.trim().length > 0);
+            } else if (Array.isArray(userData.badges)) {
+                badges = userData.badges;
+            }
+        }
+        
         const avatarColor = userData.avatarColor || avatarColorFromPost || 'default';
         
         // Update modal elements safely
@@ -1496,51 +1519,82 @@ async function viewProfile(userId) {
         
         // Display badges
         if (profileBadgesEl) {
-            profileBadgesEl.innerHTML = badges.map(badgeKey => {
-                const badge = BADGES[badgeKey];
-                if (!badge) return '';
-                return `<span class="profile-badge" title="${badge.name}" role="listitem">${badge.emoji}</span>`;
-            }).join('');
+            try {
+                profileBadgesEl.innerHTML = badges.map(badgeKey => {
+                    const badge = BADGES[badgeKey];
+                    if (!badge) return '';
+                    return `<span class="profile-badge" title="${badge.name}" role="listitem">${badge.emoji}</span>`;
+                }).join('');
+            } catch (err) {
+                console.error('Error displaying badges:', err);
+                profileBadgesEl.innerHTML = '';
+            }
         }
         
         // Display posts
         if (profilePostsEl) {
-            profilePostsEl.innerHTML = '';
-            
-            posts.sort((a, b) => b.timestamp - a.timestamp);
-            posts.forEach(post => {
-                const thumb = document.createElement('div');
-                thumb.className = 'profile-post-thumb';
-                thumb.setAttribute('role', 'listitem');
-                thumb.onclick = () => {
-                    closeProfileModal();
-                    const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
-                    if (postElement) {
-                        postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                };
+            try {
+                profilePostsEl.innerHTML = '';
                 
-                if (post.mediaUrl && post.mediaType !== 'text') {
-                    if (post.mediaType === 'video') {
-                        thumb.innerHTML = `<video src="${post.mediaUrl}" muted></video>`;
+                console.log('Displaying posts for profile:', posts.length, 'posts found');
+                
+                posts.sort((a, b) => b.timestamp - a.timestamp);
+                posts.forEach((post, index) => {
+                    console.log(`Creating thumbnail for post ${index}:`, {
+                        id: post.id,
+                        mediaType: post.mediaType,
+                        hasMediaUrl: !!post.mediaUrl
+                    });
+                    
+                    const thumb = document.createElement('div');
+                    thumb.className = 'profile-post-thumb';
+                    thumb.setAttribute('role', 'listitem');
+                    thumb.onclick = () => {
+                        closeProfileModal();
+                        const postElement = document.querySelector(`[data-post-id="${post.id}"]`);
+                        if (postElement) {
+                            postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    };
+                    
+                    if (post.mediaUrl && post.mediaType !== 'text') {
+                        if (post.mediaType === 'video') {
+                            thumb.innerHTML = `<video src="${post.mediaUrl}" muted></video>`;
+                        } else {
+                            thumb.innerHTML = `<img src="${post.mediaUrl}" alt="Post thumbnail">`;
+                        }
                     } else {
-                        thumb.innerHTML = `<img src="${post.mediaUrl}" alt="Post thumbnail">`;
+                        thumb.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); font-size: 14px; color: var(--text-secondary);">Text Post</div>`;
                     }
-                } else {
-                    thumb.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: var(--bg-tertiary); font-size: 14px; color: var(--text-secondary);">Text Post</div>`;
+                    
+                    profilePostsEl.appendChild(thumb);
+                });
+                
+                if (posts.length === 0) {
+                    profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No posts yet</p>';
                 }
                 
-                profilePostsEl.appendChild(thumb);
-            });
-            
-            if (posts.length === 0) {
-                profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--text-secondary); grid-column: 1/-1;">No posts yet</p>';
+                console.log('Successfully displayed all post thumbnails');
+            } catch (err) {
+                console.error('Error displaying posts:', err);
+                profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--accent-primary); grid-column: 1/-1;">Error displaying posts</p>';
             }
         }
         
     } catch (error) {
         console.error('Error loading profile:', error);
-        showNotification('Failed to load profile', 'error');
+        console.error('Error details:', {
+            code: error.code,
+            message: error.message,
+            userId: userId
+        });
+        
+        // Show error in the posts container
+        if (profilePostsEl) {
+            profilePostsEl.innerHTML = '<p style="text-align: center; color: var(--accent-primary); grid-column: 1/-1; padding: 40px 20px;">Error loading posts. Check console for details.</p>';
+        }
+        
+        showNotification('Error loading profile: ' + (error.message || 'Unknown error'), 'error');
     }
 }
 
