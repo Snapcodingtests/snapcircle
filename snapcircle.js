@@ -19,8 +19,12 @@ const CONFIG = {
 const STORAGE_KEYS = {
     USERNAME: 'snapcircle_username',
     USER_ID: 'snapcircle_user_id',
+    USER_CODE: 'snapcircle_user_code',
+    EMAIL: 'snapcircle_email',
+    CONNECTED: 'snapcircle_connected',
     THEME: 'snapcircle_theme',
     LAST_LOGIN: 'snapcircle_last_login',
+    LAST_ACTIVE: 'snapcircle_last_active',
     STREAK: 'snapcircle_streak',
     AVATAR_COLOR: 'snapcircle_avatar_color',
     BIO: 'snapcircle_bio',
@@ -77,6 +81,9 @@ let app, database;
 let isFirebaseInitialized = false;
 let currentUsername = localStorage.getItem(STORAGE_KEYS.USERNAME) || 'User' + Math.floor(Math.random() * 10000);
 let currentUserId = localStorage.getItem(STORAGE_KEYS.USER_ID) || generateUserId();
+let currentUserCode = localStorage.getItem(STORAGE_KEYS.USER_CODE) || generateUserCode();
+let userEmail = localStorage.getItem(STORAGE_KEYS.EMAIL) || '';
+let isConnected = localStorage.getItem(STORAGE_KEYS.CONNECTED) === 'true';
 let currentStreak = 0;
 let userBadges = [];
 let selectedAvatarColor = localStorage.getItem(STORAGE_KEYS.AVATAR_COLOR) || 'default';
@@ -86,6 +93,25 @@ let postsListener = null;
 // ========================================
 // UTILITY FUNCTIONS
 // ========================================
+
+/**
+ * Generate unique user ID
+ */
+function generateUserId() {
+    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+/**
+ * Generate unique 8-character user code for bot prevention
+ */
+function generateUserCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
 
 /**
  * Sanitize user input to prevent XSS attacks
@@ -145,13 +171,6 @@ function formatTimeAgo(timestamp) {
     } else {
         return 'Just now';
     }
-}
-
-/**
- * Generate unique user ID
- */
-function generateUserId() {
-    return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
 /**
@@ -217,6 +236,7 @@ async function initializeApp() {
     // Save initial user data
     localStorage.setItem(STORAGE_KEYS.USERNAME, currentUsername);
     localStorage.setItem(STORAGE_KEYS.USER_ID, currentUserId);
+    localStorage.setItem(STORAGE_KEYS.USER_CODE, currentUserCode);
     
     // Initialize UI - these are fast and synchronous
     updateUsernameDisplay();
@@ -230,6 +250,12 @@ async function initializeApp() {
     
     // Load data if Firebase is initialized
     if (isFirebaseInitialized) {
+        // Sync user data to Firebase and update last active
+        await syncUserToFirebase();
+        
+        // Check if account needs connection warning
+        checkAccountStatus();
+        
         // Just load posts - that's all we need immediately
         loadPosts();
         
@@ -239,7 +265,108 @@ async function initializeApp() {
             updateStatsDisplay();
             loadSuggestedUsers();
             setupRealtimeListeners();
+            checkEarlyBirdBadge(); // Check for early bird badge
         }, 100);
+    }
+}
+
+// ========================================
+// USER ACCOUNT MANAGEMENT
+// ========================================
+async function syncUserToFirebase() {
+    if (!isFirebaseInitialized) return;
+    
+    try {
+        const now = Date.now();
+        const userRef = database.ref(`users/${currentUserId}`);
+        const snapshot = await userRef.once('value');
+        
+        const updates = {
+            userId: currentUserId,
+            username: currentUsername,
+            userCode: currentUserCode,
+            lastActive: now,
+            avatarColor: selectedAvatarColor
+        };
+        
+        // If user doesn't exist, set createdAt
+        if (!snapshot.exists()) {
+            updates.createdAt = now;
+            updates.connected = false;
+            
+            // Increment total users count
+            const statsRef = database.ref('stats/totalUsers');
+            const statsSnap = await statsRef.once('value');
+            const totalUsers = (statsSnap.val() || 0) + 1;
+            await statsRef.set(totalUsers);
+        } else {
+            // Preserve existing data
+            const userData = snapshot.val();
+            if (userData.email) updates.email = userData.email;
+            if (userData.connected) updates.connected = userData.connected;
+            if (userData.badges) updates.badges = userData.badges;
+        }
+        
+        await userRef.update(updates);
+        
+        // Update local state
+        if (snapshot.exists() && snapshot.val().email) {
+            userEmail = snapshot.val().email;
+            isConnected = snapshot.val().connected || false;
+            localStorage.setItem(STORAGE_KEYS.EMAIL, userEmail);
+            localStorage.setItem(STORAGE_KEYS.CONNECTED, isConnected);
+        }
+        
+        localStorage.setItem(STORAGE_KEYS.LAST_ACTIVE, now.toString());
+    } catch (error) {
+        console.error('Error syncing user:', error);
+    }
+}
+
+async function checkAccountStatus() {
+    // Show warning if account is not connected after 3 days
+    const lastActive = parseInt(localStorage.getItem(STORAGE_KEYS.LAST_ACTIVE) || Date.now());
+    const daysSinceActive = (Date.now() - lastActive) / (1000 * 60 * 60 * 24);
+    
+    if (!isConnected && daysSinceActive > 3) {
+        showAccountWarning();
+    }
+}
+
+function showAccountWarning() {
+    const warningBanner = document.createElement('div');
+    warningBanner.id = 'accountWarning';
+    warningBanner.className = 'account-warning';
+    warningBanner.innerHTML = `
+        <div class="warning-content">
+            <span class="warning-icon">⚠️</span>
+            <div class="warning-text">
+                <strong>Secure your account!</strong>
+                <p>Connect your email to prevent losing your account after 30 days of inactivity.</p>
+            </div>
+            <button class="warning-btn" onclick="openConnectModal()">Connect Now</button>
+            <button class="warning-close" onclick="this.parentElement.parentElement.remove()">✕</button>
+        </div>
+    `;
+    
+    document.body.insertBefore(warningBanner, document.body.firstChild);
+}
+
+async function checkEarlyBirdBadge() {
+    if (!isFirebaseInitialized) return;
+    
+    try {
+        const statsSnapshot = await database.ref('stats/totalUsers').once('value');
+        const totalUsers = statsSnapshot.val() || 0;
+        
+        if (totalUsers <= 100 && !userBadges.includes('EARLY_BIRD')) {
+            userBadges.push('EARLY_BIRD');
+            await database.ref(`users/${currentUserId}/badges`).set(userBadges.join(','));
+            showNotification('🌅 Early Bird badge unlocked! You\'re one of the first 100 users!');
+            updateBadgeDisplay();
+        }
+    } catch (error) {
+        console.error('Error checking early bird badge:', error);
     }
 }
 
@@ -401,7 +528,22 @@ async function loadUserBadges() {
     
     try {
         const snapshot = await database.ref('users/' + currentUserId + '/badges').once('value');
-        userBadges = snapshot.val() || [];
+        const badgeData = snapshot.val();
+        
+        if (!badgeData) {
+            userBadges = [];
+        } else if (typeof badgeData === 'string') {
+            // Handle comma-separated string format
+            userBadges = badgeData.split(',').filter(b => b.length > 0);
+        } else if (Array.isArray(badgeData)) {
+            // Handle array format
+            userBadges = badgeData;
+        } else {
+            // Unknown format, default to empty
+            userBadges = [];
+        }
+        
+        console.log('Badges loaded:', userBadges);
         updateBadgeDisplay();
     } catch (error) {
         console.error('Error loading badges:', error);
@@ -446,7 +588,7 @@ async function checkBadgesAfterPost() {
         
         if (changed) {
             userBadges = newBadges;
-            database.ref('users/' + currentUserId + '/badges').set(userBadges);
+            database.ref('users/' + currentUserId + '/badges').set(userBadges.join(','));
             updateBadgeDisplay();
         }
     } catch (error) {
@@ -471,7 +613,7 @@ function checkStreakBadges() {
     
     if (changed && isFirebaseInitialized) {
         userBadges = newBadges;
-        database.ref('users/' + currentUserId + '/badges').set(userBadges);
+        database.ref('users/' + currentUserId + '/badges').set(userBadges.join(','));
         updateBadgeDisplay();
     }
 }
@@ -1565,6 +1707,88 @@ function activatePartyMode() {
         document.body.style.animation = '';
         style.remove();
     }, 10000);
+}
+
+// ========================================
+// EMAIL CONNECTION
+// ========================================
+function openConnectModal() {
+    const modal = document.getElementById('connectModal');
+    if (!modal) {
+        createConnectModal();
+    }
+    document.getElementById('connectModal').classList.add('active');
+    document.getElementById('connectEmail').value = userEmail || '';
+    document.getElementById('userCodeDisplay').textContent = currentUserCode;
+}
+
+function createConnectModal() {
+    const modalHTML = `
+        <div class="modal" id="connectModal">
+            <div class="modal-content">
+                <h2>🔐 Connect Your Account</h2>
+                <p class="modal-description">Protect your account from auto-deletion after 30 days of inactivity.</p>
+                
+                <div class="info-box">
+                    <p><strong>Your Unique Code:</strong></p>
+                    <div class="user-code" id="userCodeDisplay">${currentUserCode}</div>
+                    <p class="info-note">Save this code! You'll need it to recover your account.</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="connectEmail">Email Address</label>
+                    <input type="email" id="connectEmail" placeholder="your@email.com" required>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button class="btn-primary" onclick="connectAccount()">Connect Account</button>
+                    <button class="btn-secondary" onclick="closeConnectModal()">Maybe Later</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closeConnectModal() {
+    document.getElementById('connectModal').classList.remove('active');
+}
+
+async function connectAccount() {
+    const email = document.getElementById('connectEmail').value.trim();
+    
+    if (!email) {
+        showNotification('Please enter an email address');
+        return;
+    }
+    
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showNotification('Please enter a valid email address');
+        return;
+    }
+    
+    try {
+        await database.ref(`users/${currentUserId}`).update({
+            email: email,
+            connected: true,
+            connectedAt: Date.now()
+        });
+        
+        userEmail = email;
+        isConnected = true;
+        localStorage.setItem(STORAGE_KEYS.EMAIL, email);
+        localStorage.setItem(STORAGE_KEYS.CONNECTED, 'true');
+        
+        // Remove warning banner if it exists
+        const warning = document.getElementById('accountWarning');
+        if (warning) warning.remove();
+        
+        showNotification('✅ Account connected successfully!');
+        closeConnectModal();
+    } catch (error) {
+        console.error('Error connecting account:', error);
+        showNotification('Failed to connect account. Please try again.');
+    }
 }
 
 // ========================================
