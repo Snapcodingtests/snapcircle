@@ -89,6 +89,8 @@ let userBadges = [];
 let selectedAvatarColor = localStorage.getItem(STORAGE_KEYS.AVATAR_COLOR) || 'default';
 let currentFile = null;
 let postsListener = null;
+let postsListenerRef = null;
+let cachedPosts = [];
 
 // ========================================
 // UTILITY FUNCTIONS
@@ -207,6 +209,41 @@ function handleError(error, context = '') {
     }
     
     showNotification(errorMessage, 'error');
+}
+
+
+function buildFeedSkeleton(count = 3) {
+    return Array.from({ length: count }).map(() => `
+        <article class="skeleton-post" aria-hidden="true">
+            <div class="skeleton-header">
+                <div class="skeleton-avatar"></div>
+                <div class="skeleton-text">
+                    <div class="skeleton-line"></div>
+                    <div class="skeleton-line short"></div>
+                </div>
+            </div>
+            <div class="skeleton-media"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line short"></div>
+        </article>
+    `).join('');
+}
+
+function showFeedLoading(message = 'Loading posts...', skeletonCount = 3) {
+    const feed = document.getElementById('feed');
+    if (!feed) return;
+
+    feed.innerHTML = `
+        <div class="loading-message" style="text-align:center;color:var(--text-secondary);padding:10px 0 6px;">${sanitizeInput(message)}</div>
+        ${buildFeedSkeleton(skeletonCount)}
+    `;
+}
+
+function updateCachedPosts(posts) {
+    cachedPosts = posts
+        .filter(post => post && post.id)
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 300);
 }
 
 // ========================================
@@ -944,6 +981,7 @@ async function loadPosts() {
     if (!isFirebaseInitialized) return;
     
     const feed = document.getElementById('feed');
+    showFeedLoading('Loading recent posts...');
     
     try {
         // Load posts - limit to last 30 for performance  
@@ -957,6 +995,7 @@ async function loadPosts() {
             posts.push({ id: snap.key, ...snap.val() });
         });
         
+        updateCachedPosts(posts);
         feed.innerHTML = '';
         
         if (posts.length === 0) {
@@ -1015,26 +1054,29 @@ async function loadPosts() {
 
 function setupRealtimeListeners() {
     if (!isFirebaseInitialized) return;
-    
+
     const startTime = Date.now();
-    
+
     // Listen for new posts only (posts created after page load)
-    postsListener = database.ref('posts')
+    postsListenerRef = database.ref('posts')
         .orderByChild('timestamp')
-        .startAt(startTime)
-        .on('child_added', (snapshot) => {
-            const post = { id: snapshot.key, ...snapshot.val() };
-            
-            // Only add posts created after initialization
-            if (post.timestamp < startTime) return;
-            
-            const feed = document.getElementById('feed');
-            const emptyState = feed.querySelector('.empty-state');
-            if (emptyState) emptyState.remove();
-            
-            const postElement = createPostElement(post);
-            feed.insertBefore(postElement, feed.firstChild);
-        });
+        .startAt(startTime);
+
+    postsListener = postsListenerRef.on('child_added', (snapshot) => {
+        const post = { id: snapshot.key, ...snapshot.val() };
+
+        // Only add posts created after initialization
+        if (post.timestamp < startTime) return;
+
+        const feed = document.getElementById('feed');
+        const emptyState = feed.querySelector('.empty-state');
+        if (emptyState) emptyState.remove();
+
+        cachedPosts = [post, ...cachedPosts.filter(item => item.id !== post.id)].slice(0, 300);
+
+        const postElement = createPostElement(post);
+        feed.insertBefore(postElement, feed.firstChild);
+    });
 }
 
 function createPostElement(post) {
@@ -1268,26 +1310,6 @@ function viewAllComments(postId) {
     });
 }
 
-async function refreshPost(postId) {
-    if (!isFirebaseInitialized) return;
-    
-    try {
-        const snapshot = await database.ref(`posts/${postId}`).once('value');
-        if (!snapshot.exists()) return;
-        
-        const post = { id: snapshot.key, ...snapshot.val() };
-        const postElement = document.querySelector(`[data-post-id="${postId}"]`);
-        
-        if (postElement) {
-            const newElement = createPostElement(post);
-            postElement.replaceWith(newElement);
-        }
-    } catch (error) {
-        console.error('Error refreshing post:', error);
-        // Don't show error to user, post will just not update
-    }
-}
-
 function togglePostMenu(postId) {
     const menu = document.getElementById(`menu-${postId}`);
     
@@ -1364,35 +1386,44 @@ function openImageViewer(imageUrl) {
 // ========================================
 const searchPosts = debounce(async function(query) {
     if (!isFirebaseInitialized) return;
-    
+
     const feed = document.getElementById('feed');
-    
-    if (!query.trim()) {
-        // Reload all posts
-        lastPostId = null;
-        feed.innerHTML = '';
-        await loadPostsWithPagination();
+    const normalizedQuery = query.trim();
+
+    if (!normalizedQuery) {
+        await loadPosts();
         return;
     }
-    
-    const searchTerm = query.toLowerCase().trim();
-    
+
+    const searchTerm = normalizedQuery.toLowerCase();
+
     try {
-        const snapshot = await database.ref('posts').once('value');
-        const matchingPosts = [];
-        
-        snapshot.forEach(snap => {
-            const post = { id: snap.key, ...snap.val() };
+        showFeedLoading('Searching posts...', 2);
+
+        let sourcePosts = cachedPosts;
+
+        if (!sourcePosts.length) {
+            const snapshot = await database.ref('posts')
+                .orderByChild('timestamp')
+                .limitToLast(200)
+                .once('value');
+
+            const fetchedPosts = [];
+            snapshot.forEach(snap => {
+                fetchedPosts.push({ id: snap.key, ...snap.val() });
+            });
+            updateCachedPosts(fetchedPosts);
+            sourcePosts = cachedPosts;
+        }
+
+        const matchingPosts = sourcePosts.filter(post => {
             const caption = (post.caption || '').toLowerCase();
             const username = (post.username || '').toLowerCase();
-            
-            if (caption.includes(searchTerm) || username.includes(searchTerm)) {
-                matchingPosts.push(post);
-            }
+            return caption.includes(searchTerm) || username.includes(searchTerm);
         });
-        
+
         feed.innerHTML = '';
-        
+
         if (matchingPosts.length === 0) {
             feed.innerHTML = `
                 <div class="empty-state">
@@ -1401,13 +1432,16 @@ const searchPosts = debounce(async function(query) {
                     <p>Try searching for something else</p>
                 </div>
             `;
-        } else {
-            matchingPosts.sort((a, b) => b.timestamp - a.timestamp);
-            matchingPosts.forEach(post => {
-                const postElement = createPostElement(post);
-                feed.appendChild(postElement);
-            });
+            return;
         }
+
+        const fragment = document.createDocumentFragment();
+        matchingPosts
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+            .forEach(post => {
+                fragment.appendChild(createPostElement(post));
+            });
+        feed.appendChild(fragment);
     } catch (error) {
         handleError(error, 'searchPosts');
     }
@@ -2089,7 +2123,7 @@ You can send this manually to: ayoubnware1@gmail.com
 // ========================================
 window.addEventListener('beforeunload', () => {
     // Remove Firebase listeners
-    if (postsListener) {
-        database.ref('posts').off('child_added', postsListener);
+    if (postsListenerRef && postsListener) {
+        postsListenerRef.off('child_added', postsListener);
     }
 });
