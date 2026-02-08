@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyBoy Lite - Python Game Boy Emulator</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0f1116; --card:#1a1f2b; --muted:#8b96a8; --text:#e6edf3; --accent:#6ee7b7; --border:#2c3443; --danger:#fb7185; }
+    body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
+    .app { max-width:1100px; margin:0 auto; padding:20px; display:grid; gap:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    button,input { background:#101520; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+    button { cursor:pointer; }
+    button:hover { border-color:var(--accent); }
+    #screen { width:480px; height:432px; image-rendering:pixelated; border:2px solid var(--border); border-radius:8px; background:#0b0f16; }
+    .status { color:var(--muted); font-size:14px; }
+    .ok { color:var(--accent); }
+    .error { color:var(--danger); }
+    .grid { display:grid; grid-template-columns:minmax(500px,1fr) minmax(280px,360px); gap:16px; }
+    code { color:#93c5fd; }
+    @media (max-width:920px) { .grid { grid-template-columns:1fr; } #screen { width:100%; height:auto; aspect-ratio:160/144; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="card">
+      <h1>PyBoy Lite (Python + GitHub Pages)</h1>
+      <p class="status">Standalone emulator under <code>/gameboy_emulator</code> so SnapCircle remains untouched.</p>
+    </section>
+
+    <section class="grid">
+      <section class="card"><canvas id="screen" width="160" height="144"></canvas></section>
+      <section class="card">
+        <div class="row"><label for="romFile">ROM (.gb):</label><input id="romFile" type="file" accept=".gb" /></div>
+        <div class="row" style="margin-top:10px;"><button id="startBtn">Start</button><button id="pauseBtn">Pause</button><button id="resetBtn">Reset</button></div>
+        <p style="margin-top:12px;" class="status">Controls: <code>Arrows</code> D-Pad, <code>Z</code>=A, <code>X</code>=B, <code>Enter</code>=Start, <code>Shift</code>=Select.</p>
+        <p id="runtimeStatus" class="status">Loading Python runtime…</p>
+      </section>
+    </section>
+  </main>
+  <script defer src="https://cdn.jsdelivr.net/pyodide/v0.27.2/full/pyodide.js"></script>
+  <script defer src="emulator.js"></script>
+</body>
+</html>
